@@ -24,12 +24,10 @@ pipeline {
     DEPLOY_HOST     = 'easywebsoft.com'                       // cPanel FTP hostname
     DEPLOY_PORT     = '21'                                    // 21 = FTP/FTPS, 22 = SFTP
     DEPLOY_PROTOCOL = 'ftps'                                  // host has no SSH → FTPS (TLS). Use 'ftp' if TLS fails.
-    // Frontend is served at https://evangadi.easywebsoft.com (a subdomain).
-    // CONFIRM the exact Document Root in cPanel > Subdomains. Common values are:
-    //   /home/easywebs/evangadi.easywebsoft.com   (recent cPanel default — set here)
-    //   /home/easywebs/public_html/evangadi       (older/alt default)
-    FRONTEND_REMOTE = '/home/easywebs/evangadi.easywebsoft.com' // where the SPA is served
-    BACKEND_REMOTE  = '/home/easywebs/evangadi-backend'       // cPanel Node app "Application root"
+    // NOTE: over FTP the login root (/) IS the home dir (/home/easywebs), so these
+    // paths are relative to home — no /home/easywebs prefix.
+    FRONTEND_REMOTE = '/evangadi.easywebsoft.com'            // subdomain docroot (SPA)
+    BACKEND_REMOTE  = '/evangadi-backend'                    // cPanel Node app "Application root"
     // --------------------------------------------------------------------
 
     // cPanel FTP/SSH login stored as a Jenkins "Username with password" credential.
