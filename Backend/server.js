@@ -31,7 +31,7 @@ app.use((req, _res, next) => {
 
 // Public
 app.get("/api/health", (_req, res) =>
-  res.json({ ok: true, time: new Date().toISOString() }),
+  res.json({ ok: true, version: "deploy-test-1", time: new Date().toISOString() }),
 );
 app.use("/api/auth", authRoutes);
 

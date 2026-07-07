@@ -3,7 +3,13 @@
     "allow": [
       "Bash(node -e ' *)",
       "Bash(npx vite *)",
-      "Bash(node --check scripts/fix-session-time-ampm.js)"
+      "Bash(node --check scripts/fix-session-time-ampm.js)",
+      "Bash(git config *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git add *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
     ]
   }
 }

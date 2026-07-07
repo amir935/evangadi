@@ -18,6 +18,11 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
+  // Auto-deploy: Jenkins checks GitHub every ~2 minutes and builds on new commits.
+  // (Used instead of a webhook because this Jenkins runs on localhost, which GitHub
+  // cannot reach. Switch to a webhook if you ever expose Jenkins publicly.)
+  triggers { pollSCM('H/2 * * * *') }
+
   environment {
     // ---- EDIT THESE for your environment -------------------------------
     VITE_API_BASE   = 'https://api-evangadi.easywebsoft.com'  // baked into the frontend build
