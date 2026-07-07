@@ -20,12 +20,15 @@ pipeline {
 
   environment {
     // ---- EDIT THESE for your environment -------------------------------
-    VITE_API_BASE   = 'https://api.your-domain.com'          // baked into the frontend build
-    DEPLOY_HOST     = 'server.your-host.com'                 // cPanel SSH/FTP hostname
-    DEPLOY_PORT     = '22'                                   // 22 = SFTP, 21 = FTP
-    DEPLOY_PROTOCOL = 'sftp'                                 // 'sftp' (recommended) or 'ftp'
-    FRONTEND_REMOTE = '/home/CPANELUSER/public_html'         // where the SPA is served
-    BACKEND_REMOTE  = '/home/CPANELUSER/evangadi-backend'    // cPanel Node app "Application root"
+    VITE_API_BASE   = 'https://api-evangadi.easywebsoft.com'  // baked into the frontend build
+    DEPLOY_HOST     = 'easywebsoft.com'                       // cPanel SSH/FTP hostname
+    DEPLOY_PORT     = '22'                                    // 22 = SFTP, 21 = FTP
+    DEPLOY_PROTOCOL = 'sftp'                                  // 'sftp' (recommended) or 'ftp'
+    // NOTE: /public_html serves the MAIN domain. If the frontend lives on a
+    // subdomain (e.g. app.easywebsoft.com), change this to that subdomain's
+    // document root, e.g. '/home/easywebs/app' or '/home/easywebs/public_html/app'.
+    FRONTEND_REMOTE = '/home/easywebs/public_html'            // where the SPA is served
+    BACKEND_REMOTE  = '/home/easywebs/evangadi-backend'       // cPanel Node app "Application root"
     // --------------------------------------------------------------------
 
     // cPanel FTP/SSH login stored as a Jenkins "Username with password" credential.
