@@ -9,7 +9,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$LocalPath,
   [Parameter(Mandatory = $true)][string]$RemotePath,
-  [ValidateSet("sftp", "ftp")][string]$Protocol = "sftp",
+  [ValidateSet("sftp", "ftp", "ftps")][string]$Protocol = "sftp",
   [string]$FileMask = "",        # WinSCP exclude mask, e.g. "|.env;.git/;node_modules/"
   [switch]$TouchRestart          # upload tmp/restart.txt to restart a cPanel/Passenger Node app
 )
@@ -45,12 +45,19 @@ Add-Type -AssemblyName System.Web
 $encUser = [System.Web.HttpUtility]::UrlEncode($user)
 $encPass = [System.Web.HttpUtility]::UrlEncode($pass)
 
-if ($Protocol -eq "sftp") {
-  # -hostkey=* accepts any host key. For production, replace * with the pinned
-  # fingerprint shown by: winscp.com /command "open sftp://user@host/" "exit"
-  $open = "open sftp://$encUser`:$encPass@$deployHost`:$port/ -hostkey=`"*`""
-} else {
-  $open = "open ftp://$encUser`:$encPass@$deployHost`:$port/"
+switch ($Protocol) {
+  "sftp" {
+    # -hostkey=* accepts any SSH host key. Pin it for production.
+    $open = "open sftp://$encUser`:$encPass@$deployHost`:$port/ -hostkey=`"*`""
+  }
+  "ftps" {
+    # Explicit FTP over TLS (recommended for cPanel). -certificate=* accepts any TLS cert.
+    $open = "open ftpes://$encUser`:$encPass@$deployHost`:$port/ -certificate=`"*`""
+  }
+  default {
+    # Plain, UNENCRYPTED FTP — credentials sent in clear text. Use only if TLS is unavailable.
+    $open = "open ftp://$encUser`:$encPass@$deployHost`:$port/"
+  }
 }
 
 $sync = "synchronize remote `"$absLocal`" `"$RemotePath`""

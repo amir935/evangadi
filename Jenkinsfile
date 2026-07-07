@@ -21,9 +21,9 @@ pipeline {
   environment {
     // ---- EDIT THESE for your environment -------------------------------
     VITE_API_BASE   = 'https://api-evangadi.easywebsoft.com'  // baked into the frontend build
-    DEPLOY_HOST     = 'easywebsoft.com'                       // cPanel SSH/FTP hostname
-    DEPLOY_PORT     = '22'                                    // 22 = SFTP, 21 = FTP
-    DEPLOY_PROTOCOL = 'sftp'                                  // 'sftp' (recommended) or 'ftp'
+    DEPLOY_HOST     = 'easywebsoft.com'                       // cPanel FTP hostname
+    DEPLOY_PORT     = '21'                                    // 21 = FTP/FTPS, 22 = SFTP
+    DEPLOY_PROTOCOL = 'ftps'                                  // host has no SSH → FTPS (TLS). Use 'ftp' if TLS fails.
     // Frontend is served at https://evangadi.easywebsoft.com (a subdomain).
     // CONFIRM the exact Document Root in cPanel > Subdomains. Common values are:
     //   /home/easywebs/evangadi.easywebsoft.com   (recent cPanel default — set here)
