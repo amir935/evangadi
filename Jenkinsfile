@@ -74,34 +74,40 @@ pipeline {
 
     stage('Deploy frontend') {
       steps {
-        powershell '''
-          $ErrorActionPreference = "Stop"
-          $env:DEPLOY_USER = $env:DEPLOY_CREDS_USR
-          $env:DEPLOY_PASS = $env:DEPLOY_CREDS_PSW
-          ./jenkins/deploy.ps1 `
-            -LocalPath "evangadi2/dist" `
-            -RemotePath $env:FRONTEND_REMOTE `
-            -Protocol  $env:DEPLOY_PROTOCOL
-        '''
+        // Retry to ride out transient FTP timeouts on shared hosting.
+        retry(3) {
+          powershell '''
+            $ErrorActionPreference = "Stop"
+            $env:DEPLOY_USER = $env:DEPLOY_CREDS_USR
+            $env:DEPLOY_PASS = $env:DEPLOY_CREDS_PSW
+            ./jenkins/deploy.ps1 `
+              -LocalPath "evangadi2/dist" `
+              -RemotePath $env:FRONTEND_REMOTE `
+              -Protocol  $env:DEPLOY_PROTOCOL
+          '''
+        }
       }
     }
 
     stage('Deploy backend') {
       steps {
-        powershell '''
-          $ErrorActionPreference = "Stop"
-          $env:DEPLOY_USER = $env:DEPLOY_CREDS_USR
-          $env:DEPLOY_PASS = $env:DEPLOY_CREDS_PSW
-          # Ship source only. node_modules is installed on the server by cPanel
-          # (Setup Node.js App > Run NPM Install) — FTP can't carry its symlinks.
-          # Never overwrite the server .env, and skip .git/zip.
-          ./jenkins/deploy.ps1 `
-            -LocalPath "Backend" `
-            -RemotePath $env:BACKEND_REMOTE `
-            -Protocol  $env:DEPLOY_PROTOCOL `
-            -FileMask  "|.env;.git/;*.zip;node_modules/" `
-            -TouchRestart
-        '''
+        // Retry to ride out transient FTP timeouts on shared hosting.
+        retry(3) {
+          powershell '''
+            $ErrorActionPreference = "Stop"
+            $env:DEPLOY_USER = $env:DEPLOY_CREDS_USR
+            $env:DEPLOY_PASS = $env:DEPLOY_CREDS_PSW
+            # Ship source only. node_modules is installed on the server by cPanel
+            # (Setup Node.js App > Run NPM Install) — FTP can't carry its symlinks.
+            # Never overwrite the server .env, and skip .git/zip.
+            ./jenkins/deploy.ps1 `
+              -LocalPath "Backend" `
+              -RemotePath $env:BACKEND_REMOTE `
+              -Protocol  $env:DEPLOY_PROTOCOL `
+              -FileMask  "|.env;.git/;*.zip;node_modules/" `
+              -TouchRestart
+          '''
+        }
       }
     }
   }

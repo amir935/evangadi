@@ -60,6 +60,9 @@ switch ($Protocol) {
   }
 }
 
+# Give slow / loaded shared-hosting FTP more time before giving up.
+$open += " -timeout=40"
+
 $sync = "synchronize remote `"$absLocal`" `"$RemotePath`""
 if ($FileMask) { $sync += " -filemask=`"$FileMask`"" }
 
