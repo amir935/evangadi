@@ -711,7 +711,19 @@ export default function WeeklySchedule({
   const [busy, setBusy] = useState(false); // shown briefly during any action
   const [error, setError] = useState("");
 
-  const wKey = weekKey(weekMonday);
+  // Which schedule is active: "tutoring" (1-on-1) or "coding" (group classes). Persisted.
+  const [scheduleKind, setScheduleKind] = useState(
+    () => localStorage.getItem("scheduleKind") || "tutoring",
+  );
+  useEffect(() => {
+    localStorage.setItem("scheduleKind", scheduleKind);
+  }, [scheduleKind]);
+  // Coding data lives under a "c:" key namespace so it never mixes with 1-on-1.
+  // ("c:2026-W28" is 10 chars — fits the week_key column exactly.)
+  const kindPrefix = scheduleKind === "coding" ? "c:" : "";
+  const nsKey = (monday) => kindPrefix + weekKey(monday);
+
+  const wKey = nsKey(weekMonday);
 
   // CORE: reload from server — this is the source of truth
   const reload = useCallback(async () => {
@@ -876,7 +888,7 @@ export default function WeeklySchedule({
   const [reportWeekMonday, setReportWeekMonday] = useState(() =>
     getMonday(today),
   );
-  const reportWKey = weekKey(reportWeekMonday);
+  const reportWKey = nsKey(reportWeekMonday);
   const [reportManualEntries, setReportManualEntries] = useState([]);
   const [reportWeekExpectations, setReportWeekExpectations] = useState({});
   const [reportAudioReceived, setReportAudioReceived] = useState({});
@@ -1304,7 +1316,7 @@ export default function WeeklySchedule({
   };
 
   const copyFromPreviousWeek = async () => {
-    const prevKey = weekKey(addDays(weekMonday, -7));
+    const prevKey = nsKey(addDays(weekMonday, -7));
     if (
       !window.confirm(
         "Replace this week's schedule with a fresh copy of last week's?",
@@ -1788,9 +1800,10 @@ export default function WeeklySchedule({
   const showChecklist = !!activeReview;
 
   // Load report data for a specific week (independent from schedule week)
-  const loadReportWeek = useCallback(async (monday) => {
+  const loadReportWeek = useCallback(
+    async (monday) => {
     setReportLoading(true);
-    const rKey = weekKey(monday);
+    const rKey = kindPrefix + weekKey(monday);
     try {
       const [manual, weekExp, received, notes, groups] = await Promise.all([
         api.getManualEntries(rKey).catch(() => []),
@@ -1809,7 +1822,9 @@ export default function WeeklySchedule({
     } finally {
       setReportLoading(false);
     }
-  }, []);
+    },
+    [kindPrefix],
+  );
 
   // When the report opens, always show the CURRENT week (stable/predictable).
   // Past weeks are reachable with the ‹ / › arrows via loadReportWeek().
@@ -1819,7 +1834,7 @@ export default function WeeklySchedule({
     const currentMonday = getMonday(today);
     setReportWeekMonday(currentMonday);
     try {
-      const wk = weekKey(currentMonday);
+      const wk = nsKey(currentMonday);
       const [entries, weekExp, received, notes] = await Promise.all([
         api.getManualEntries(wk).catch(() => []),
         api.getWeekExpectations(wk).catch(() => ({})),
@@ -1883,7 +1898,7 @@ export default function WeeklySchedule({
       return;
     }
     const nextMonday = addDays(reportWeekMonday, 7);
-    const nextKey = weekKey(nextMonday);
+    const nextKey = nsKey(nextMonday);
 
     const existingNext = await api.getManualEntries(nextKey).catch(() => []);
     if (existingNext && existingNext.length > 0) {
@@ -1950,8 +1965,8 @@ export default function WeeklySchedule({
       const dueDateFinal = afterEnd.getDay() === 2 ? afterEnd : dueDate;
 
       const [entries1, entries2] = await Promise.all([
-        api.getManualEntries(weekKey(week1Monday)).catch(() => []),
-        api.getManualEntries(weekKey(week2Monday)).catch(() => []),
+        api.getManualEntries(nsKey(week1Monday)).catch(() => []),
+        api.getManualEntries(nsKey(week2Monday)).catch(() => []),
       ]);
 
       const allEntries = [...entries1, ...entries2];
@@ -2439,6 +2454,42 @@ export default function WeeklySchedule({
                 >
                   ↻
                 </button>
+              </div>
+              {/* Switch between the 1-on-1 and Coding (group) schedules */}
+              <div
+                style={{
+                  display: "inline-flex",
+                  border: "1.5px solid #e2e8f0",
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  alignSelf: "center",
+                }}
+              >
+                {[
+                  { key: "tutoring", label: "👤 1-on-1" },
+                  { key: "coding", label: "👥 Coding" },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setScheduleKind(opt.key)}
+                    title={
+                      opt.key === "coding"
+                        ? "Group coding classes (separate schedule)"
+                        : "One-on-one tutoring"
+                    }
+                    style={{
+                      padding: "8px 14px",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: scheduleKind === opt.key ? "#2563eb" : "#f8fafc",
+                      color: scheduleKind === opt.key ? "#fff" : "#475569",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
               <div
                 style={{

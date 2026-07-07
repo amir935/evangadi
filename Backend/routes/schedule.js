@@ -41,9 +41,13 @@ router.get("/:weekKey", async (req, res) => {
     );
     console.log(`  → all weeks in DB: ${allWeeks.map((r) => r.week_key).join(", ") || "(none)"}`);
 
-    // Find the most recent week that is strictly less than weekKey
+    // Find the most recent EARLIER week in the SAME schedule namespace.
+    // Keys may carry a namespace prefix like "c:2026-W28" (Coding) vs "2026-W28"
+    // (1-on-1). Copy-forward must never cross between the two.
+    const targetNs = keyNamespace(weekKey);
     let sourceWeek = null;
     for (const row of allWeeks) {
+      if (keyNamespace(row.week_key) !== targetNs) continue;
       if (compareWeekKeys(row.week_key, weekKey) < 0) {
         sourceWeek = row.week_key;
         break;
@@ -61,10 +65,20 @@ router.get("/:weekKey", async (req, res) => {
   res.json(await loadWeek(weekKey));
 });
 
-// Compare two week keys like "2026-W20" — returns -1/0/1
+// A key may be "2026-W20" or namespaced like "c:2026-W20". Return the "c:" part ("" if none).
+function keyNamespace(k) {
+  const i = k.indexOf(":");
+  return i >= 0 ? k.slice(0, i + 1) : "";
+}
+// Strip any namespace prefix, leaving the "2026-W20" core.
+function weekCore(k) {
+  const i = k.indexOf(":");
+  return i >= 0 ? k.slice(i + 1) : k;
+}
+// Compare two week keys like "2026-W20" (namespace ignored) — returns -1/0/1
 function compareWeekKeys(a, b) {
-  const [ay, aw] = a.split("-W").map(Number);
-  const [by, bw] = b.split("-W").map(Number);
+  const [ay, aw] = weekCore(a).split("-W").map(Number);
+  const [by, bw] = weekCore(b).split("-W").map(Number);
   if (ay !== by) return ay - by;
   return aw - bw;
 }
