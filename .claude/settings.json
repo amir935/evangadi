@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(npx vite *)",
+      "Bash(node --check scripts/fix-session-time-ampm.js)"
+    ]
+  }
+}
