@@ -127,6 +127,14 @@ async function initSchema() {
       /* already exists */
     }
 
+    // Weeks the user explicitly cleared. An empty week normally auto-copies the
+    // previous week forward; if it's listed here, we leave it empty instead.
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS schedule_cleared_weeks (
+        week_key VARCHAR(10) PRIMARY KEY
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
     await conn.query(`
       CREATE TABLE IF NOT EXISTS weekly_status (
         week_key   VARCHAR(10) NOT NULL,

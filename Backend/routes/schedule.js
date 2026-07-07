@@ -33,7 +33,13 @@ router.get("/:weekKey", async (req, res) => {
   );
   console.log(`  → ${exists[0].c} tutors found for ${weekKey}`);
 
-  if (exists[0].c === 0) {
+  // If the user explicitly cleared this week, keep it empty — do NOT auto-copy.
+  const [[cleared]] = await pool.query(
+    "SELECT 1 AS x FROM schedule_cleared_weeks WHERE week_key = ?",
+    [weekKey]
+  );
+
+  if (exists[0].c === 0 && !cleared) {
     // Find ALL distinct weeks that have data, sorted by which is most recent
     // and earlier than the requested week
     const [allWeeks] = await pool.query(
@@ -92,6 +98,10 @@ router.post("/:weekKey/copy-from/:sourceWeek", async (req, res) => {
   // Delete existing
   await pool.query("DELETE FROM tutors WHERE week_key = ?", [weekKey]);
   await copyWeek(sourceWeek, weekKey);
+  // Explicitly populated → no longer "cleared".
+  await pool.query("DELETE FROM schedule_cleared_weeks WHERE week_key = ?", [
+    weekKey,
+  ]);
   res.json(await loadWeek(weekKey));
 });
 
@@ -100,6 +110,11 @@ router.post("/:weekKey/copy-from/:sourceWeek", async (req, res) => {
  */
 router.delete("/:weekKey/clear", async (req, res) => {
   await pool.query("DELETE FROM tutors WHERE week_key = ?", [req.params.weekKey]);
+  // Remember this week was cleared on purpose so it isn't auto-filled again.
+  await pool.query(
+    "INSERT IGNORE INTO schedule_cleared_weeks (week_key) VALUES (?)",
+    [req.params.weekKey]
+  );
   res.json({ ok: true });
 });
 
@@ -125,6 +140,10 @@ router.post("/:weekKey/tutors", async (req, res) => {
     "INSERT INTO tutors (id, week_key, day_id, tutor_name, position) VALUES (?, ?, ?, ?, ?)",
     [id, weekKey, dayId, tutor.trim(), c]
   );
+  // The week now has content again — it's no longer "intentionally cleared".
+  await pool.query("DELETE FROM schedule_cleared_weeks WHERE week_key = ?", [
+    weekKey,
+  ]);
   res.status(201).json({ id, tutor: tutor.trim(), students: [] });
 });
 
