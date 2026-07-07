@@ -175,6 +175,13 @@ router.patch("/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/manual-entries  → delete ALL entries across EVERY week (destructive).
+// Declared before "/:id" so the base path isn't captured as an id.
+router.delete("/", async (_req, res) => {
+  const [result] = await pool.query("DELETE FROM report_manual_entries");
+  res.json({ ok: true, deleted: result.affectedRows });
+});
+
 // DELETE /api/manual-entries/:id
 router.delete("/:id", async (req, res) => {
   await pool.query("DELETE FROM report_manual_entries WHERE id = ?", [

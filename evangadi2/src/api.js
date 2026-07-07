@@ -225,6 +225,9 @@ export const api = {
     }),
   deleteManualEntry: (id) =>
     request(`/api/manual-entries/${id}`, { method: "DELETE" }),
+  // Delete ALL manual entries across every week (destructive).
+  clearAllManualEntries: () =>
+    request(`/api/manual-entries`, { method: "DELETE" }),
 
   // Admin — user account management (admin role only)
   getUsers: () => request(`/api/admin/users`),

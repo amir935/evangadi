@@ -33,7 +33,7 @@ app.use((req, _res, next) => {
 app.get("/api/health", (_req, res) =>
   res.json({
     ok: true,
-    version: "deploy-test-3",
+    version: "1.0.0",
     time: new Date().toISOString(),
   }),
 );

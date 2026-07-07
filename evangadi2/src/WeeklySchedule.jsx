@@ -1041,6 +1041,58 @@ export default function WeeklySchedule({
     }
   };
 
+  // Delete EVERY audio-report entry for the week currently shown. Destructive — confirms first.
+  const clearAllAudioEntries = async () => {
+    if (reportManualEntries.length === 0) {
+      flash("Nothing to clear — this week is already empty");
+      return;
+    }
+    const label = `${fmtShort(reportWeekMonday)} – ${fmtShort(addDays(reportWeekMonday, 6))}`;
+    if (
+      !window.confirm(
+        `Delete ALL ${reportManualEntries.length} audio entr${reportManualEntries.length === 1 ? "y" : "ies"} for ${label}?\n\nThis permanently removes them and cannot be undone.`,
+      )
+    )
+      return;
+
+    setReportLoading(true);
+    try {
+      for (const entry of reportManualEntries) {
+        await api.deleteManualEntry(entry.id);
+      }
+      setReportManualEntries([]);
+      flash("Cleared all audio entries for this week");
+    } catch (err) {
+      flash(err.message || "Failed to clear — reloading");
+      const refreshed = await api.getManualEntries(reportWKey).catch(() => []);
+      setReportManualEntries(refreshed || []);
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // Delete EVERY audio entry for ALL weeks. Requires typing DELETE to confirm.
+  const clearAllAudioEntriesAllWeeks = async () => {
+    const typed = window.prompt(
+      "⚠ This permanently deletes EVERY audio entry for ALL weeks (all history).\n\nType DELETE to confirm:",
+    );
+    if (typed === null) return; // cancelled
+    if (typed.trim() !== "DELETE") {
+      flash("Cancelled — you must type DELETE exactly");
+      return;
+    }
+    setReportLoading(true);
+    try {
+      await api.clearAllManualEntries();
+      setReportManualEntries([]);
+      flash("Deleted all audio entries for every week");
+    } catch (err) {
+      flash(err.message || "Failed to clear all weeks");
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   // Copy a session entry to clipboard
   const copySessionEntry = (entry) => {
     setSessionClipboard(entry);
@@ -5753,6 +5805,30 @@ export default function WeeklySchedule({
                 }}
               >
                 📊 2-Week Summary
+              </button>
+              <button
+                style={{
+                  ...styles.btnGhost,
+                  color: "#d97706",
+                  borderColor: "#fcd34d",
+                }}
+                onClick={clearAllAudioEntries}
+                disabled={reportLoading}
+                title="Delete all audio entries for the week shown"
+              >
+                🗑️ Clear This Week
+              </button>
+              <button
+                style={{
+                  ...styles.btnGhost,
+                  color: "#dc2626",
+                  borderColor: "#fca5a5",
+                }}
+                onClick={clearAllAudioEntriesAllWeeks}
+                disabled={reportLoading}
+                title="Delete ALL audio entries for every week (type-to-confirm)"
+              >
+                🗑️ Clear ALL Weeks
               </button>
               {(view !== "report" || onExitReport) && (
                 <button style={styles.btnPrimary} onClick={exitReport}>

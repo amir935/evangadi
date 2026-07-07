@@ -640,6 +640,27 @@ export default function VideoReviewChecklist({
     setSelectedObservations([]);
     setNotes("");
   };
+  // Reset the ENTIRE checklist to empty (checks, ratings, text, names). Confirms first.
+  const clearAll = () => {
+    if (
+      !window.confirm(
+        "Clear the entire checklist and empty every field? This cannot be undone.",
+      )
+    )
+      return;
+    setChecked(buildInitialState(false));
+    setQuality(buildInitialQuality());
+    setSelectedObservations([]);
+    setNotes("");
+    setIssuesSeen("");
+    setRecommendation("");
+    setTutorName("");
+    setStudentName("");
+    setReviewer("");
+    setReviewDate(new Date().toISOString().slice(0, 10));
+    setIsGroupSession(false);
+    setSaveResult(null);
+  };
 
   const addObservation = (category, item) => {
     const tag = `[${OBSERVATIONS[category].label}]`;
@@ -1438,6 +1459,13 @@ export default function VideoReviewChecklist({
                 </button>
                 <button style={styles.btn} onClick={clearObservations}>
                   Clear observations
+                </button>
+                <button
+                  style={{ ...styles.btn, color: "#dc2626", borderColor: "#fca5a5" }}
+                  onClick={clearAll}
+                  title="Reset the whole checklist and empty every field"
+                >
+                  🗑️ Clear all
                 </button>
                 <button
                   style={{
