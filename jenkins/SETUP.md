@@ -111,8 +111,8 @@ Click **Build Now**.
 - **Host key:** `deploy.ps1` uses `-hostkey="*"` (accept any). For production, pin it —
   run `winscp.com /command "open sftp://USER@HOST/" "exit"` once, copy the shown fingerprint,
   and replace `*` in `deploy.ps1`.
-- **node_modules on the server:** shipped from Jenkins because all deps are pure JS. If you'd
-  rather install on the server, add `node_modules/` to the backend `-FileMask` and run
-  *Run NPM Install* in cPanel's Node app screen (needs the app's virtualenv).
+- **node_modules on the server:** NOT shipped over FTP (it can't carry the `.bin` symlinks).
+  cPanel installs it: after a deploy that changes `package.json`, open *Setup Node.js App* →
+  your app → **Run NPM Install**, then **Restart**. Code-only deploys don't need this.
 - **Secrets** live only in the server `.env` and in Jenkins credentials — never in Git.
 - **FTP instead of SFTP:** set `DEPLOY_PROTOCOL='ftp'` and `DEPLOY_PORT='21'` if your host has no SSH.

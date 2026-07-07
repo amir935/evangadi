@@ -87,12 +87,14 @@ pipeline {
           $ErrorActionPreference = "Stop"
           $env:DEPLOY_USER = $env:DEPLOY_CREDS_USR
           $env:DEPLOY_PASS = $env:DEPLOY_CREDS_PSW
-          # Ship code + node_modules, but never overwrite the server .env or push .git/zip.
+          # Ship source only. node_modules is installed on the server by cPanel
+          # (Setup Node.js App > Run NPM Install) — FTP can't carry its symlinks.
+          # Never overwrite the server .env, and skip .git/zip.
           ./jenkins/deploy.ps1 `
             -LocalPath "Backend" `
             -RemotePath $env:BACKEND_REMOTE `
             -Protocol  $env:DEPLOY_PROTOCOL `
-            -FileMask  "|.env;.git/;*.zip" `
+            -FileMask  "|.env;.git/;*.zip;node_modules/" `
             -TouchRestart
         '''
       }
