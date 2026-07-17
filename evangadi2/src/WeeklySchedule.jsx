@@ -2306,14 +2306,15 @@ export default function WeeklySchedule() {
       const isCancelled = entry.status === "cancelled";
       if (audioSent || isAbsent || isCancelled) return; // not overdue if sent/absent/cancelled
 
-      // Use actual session time if recorded; otherwise estimate from the day (midnight)
-      let sessionMoment;
+      // The DAY of the session always comes from dayId (the source of truth) — a session
+      // may have been moved to a different day while its old sessionTime date lingered.
+      // We only borrow the TIME-OF-DAY from sessionTime, applied onto the correct day.
+      let sessionMoment = addDays(reportWeekMonday, day.offset);
       if (entry.sessionTime) {
-        sessionMoment = new Date(entry.sessionTime);
-      } else {
-        sessionMoment = addDays(reportWeekMonday, day.offset);
+        const st = new Date(entry.sessionTime);
+        sessionMoment.setHours(st.getHours(), st.getMinutes(), 0, 0);
       }
-      // Deadline = session time + 24 hours
+      // Deadline = session moment + 24 hours
       const deadline = new Date(sessionMoment);
       deadline.setHours(deadline.getHours() + 24);
 
