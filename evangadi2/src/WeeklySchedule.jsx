@@ -1834,44 +1834,12 @@ export default function WeeklySchedule() {
     }
   }, []);
 
-  // When report opens or week changes, load that week's data
+  // When report opens, always show the CURRENT week (not whichever week happens to have data).
   const openReport = async () => {
     setShowReport(true);
-    setReportLoading(true);
-    try {
-      // Try current week first, then next week, then prev week — open whichever has data
-      const currentMonday = getMonday(today);
-      const weeks = [
-        addDays(currentMonday, 7), // next week
-        currentMonday, // this week
-        addDays(currentMonday, -7), // prev week
-      ];
-      for (const monday of weeks) {
-        const entries = await api
-          .getManualEntries(weekKey(monday))
-          .catch(() => []);
-        if (entries && entries.length > 0) {
-          setReportWeekMonday(monday);
-          const [weekExp, received, notes] = await Promise.all([
-            api.getWeekExpectations(weekKey(monday)).catch(() => ({})),
-            api.getAudioReceived(weekKey(monday)).catch(() => ({})),
-            api.getDayNotes(weekKey(monday)).catch(() => ({})),
-          ]);
-          setReportManualEntries(entries);
-          setReportWeekExpectations(weekExp || {});
-          setReportAudioReceived(received || {});
-          setReportDayNotes(notes || {});
-          return;
-        }
-      }
-      // No entries found anywhere — default to current week empty
-      setReportWeekMonday(currentMonday);
-      setReportManualEntries([]);
-    } catch (err) {
-      flash("Failed to load report");
-    } finally {
-      setReportLoading(false);
-    }
+    const currentMonday = getMonday(today);
+    setReportWeekMonday(currentMonday);
+    await loadReportWeek(currentMonday);
   };
 
   const goReportPrev = () => {
