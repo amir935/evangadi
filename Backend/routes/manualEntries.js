@@ -106,6 +106,7 @@ router.patch("/:id", async (req, res) => {
     dayId,
     materialStatus,
     sessionTime,
+    makeupDay,
   } = req.body || {};
   if (status && !VALID_STATUS.includes(status))
     return res.status(400).json({ error: "Invalid status" });
