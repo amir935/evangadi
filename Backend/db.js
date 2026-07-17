@@ -42,16 +42,6 @@ async function initSchema() {
       /* already exists */
     }
 
-    // Migration: widen the role enum to support access-scoped roles
-    // (video_reviewer / audio_reporter / reviewer). Safe to run every startup.
-    try {
-      await conn.query(
-        "ALTER TABLE users MODIFY role ENUM('admin','coordinator','tutor','student','video_reviewer','audio_reporter','reviewer') NOT NULL DEFAULT 'coordinator'",
-      );
-    } catch (e) {
-      /* already widened */
-    }
-
     // Master roster — persistent tutor identity, independent of any single week's schedule
     await conn.query(`
       CREATE TABLE IF NOT EXISTS tutor_profiles (
@@ -126,14 +116,6 @@ async function initSchema() {
     } catch (e) {
       /* already exists */
     }
-
-    // Weeks the user explicitly cleared. An empty week normally auto-copies the
-    // previous week forward; if it's listed here, we leave it empty instead.
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS schedule_cleared_weeks (
-        week_key VARCHAR(10) PRIMARY KEY
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
 
     await conn.query(`
       CREATE TABLE IF NOT EXISTS weekly_status (
@@ -278,6 +260,16 @@ async function initSchema() {
     try {
       await conn.query(
         "ALTER TABLE report_manual_entries ADD COLUMN reviewed_at DATETIME DEFAULT NULL",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+
+    // Migration: for rescheduled sessions, record the day the make-up class actually happened.
+    // NULL = make-up not done yet. A value (e.g. 'thu') = make-up completed on that day.
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN makeup_day VARCHAR(8) DEFAULT NULL",
       );
     } catch (e) {
       /* already exists */

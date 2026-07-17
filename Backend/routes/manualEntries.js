@@ -17,7 +17,7 @@ const VALID_MATERIAL_STATUS = ["unanswered", "sent", "none"];
 // GET /api/manual-entries/:weekKey
 router.get("/:weekKey", async (req, res) => {
   const [rows] = await pool.query(
-    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at FROM report_manual_entries WHERE week_key = ? ORDER BY id",
+    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at, makeup_day FROM report_manual_entries WHERE week_key = ? ORDER BY id",
     [req.params.weekKey],
   );
   res.json(
@@ -34,6 +34,7 @@ router.get("/:weekKey", async (req, res) => {
         : null,
       reviewedBy: r.reviewed_by || null,
       reviewedAt: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
+      makeupDay: r.makeup_day || null,
     })),
   );
 });
@@ -48,6 +49,7 @@ router.post("/:weekKey", async (req, res) => {
     audioFilename,
     materialStatus,
     sessionTime,
+    makeupDay,
   } = req.body || {};
   if (!tutorName || !studentName || !dayId)
     return res
@@ -145,6 +147,10 @@ router.patch("/:id", async (req, res) => {
     sets.push("session_time = ?");
     vals.push(sessionTime ? new Date(sessionTime) : null);
   }
+  if (makeupDay !== undefined) {
+    sets.push("makeup_day = ?");
+    vals.push(makeupDay || null);
+  }
 
   // Track who reviewed: when status becomes "reviewed", stamp the current user + time.
   // When it moves away from "reviewed", clear the stamp so stale reviewer info doesn't linger.
@@ -173,13 +179,6 @@ router.patch("/:id", async (req, res) => {
     vals,
   );
   res.json({ ok: true });
-});
-
-// DELETE /api/manual-entries  → delete ALL entries across EVERY week (destructive).
-// Declared before "/:id" so the base path isn't captured as an id.
-router.delete("/", async (_req, res) => {
-  const [result] = await pool.query("DELETE FROM report_manual_entries");
-  res.json({ ok: true, deleted: result.affectedRows });
 });
 
 // DELETE /api/manual-entries/:id

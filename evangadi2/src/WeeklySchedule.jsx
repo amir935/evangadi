@@ -161,6 +161,14 @@ const DAYS = [
 
 const WEEKDAYS = DAYS.filter((d) => !d.weekend);
 const WEEKEND = DAYS.filter((d) => d.weekend);
+const DAY_LABEL = Object.fromEntries(DAYS.map((d) => [d.id, d.short]));
+
+// A session counts as "reviewed/sent" if it was uploaded/reviewed, OR if it was
+// rescheduled and its make-up class has since been marked done.
+const countsAsSent = (e) =>
+  e.status === "uploaded" ||
+  e.status === "reviewed" ||
+  (e.status === "rescheduled" && !!e.makeupDay);
 
 const TUTOR_COLORS = [
   { color: "#0891b2", bg: "#cffafe" },
@@ -238,16 +246,6 @@ function fmtISO(date) {
 }
 function fmtShort(date) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-// Formats a Date/ISO as a LOCAL "YYYY-MM-DDThh:mm" value for <input type="datetime-local">.
-// Never use `new Date(iso).toISOString().slice(0,16)` for this — that yields the UTC
-// wall-clock, which the input then re-reads as local, shifting the time by the UTC offset.
-function toLocalInputValue(d) {
-  const date = new Date(d);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 function weekKey(monday) {
   const d = new Date(
@@ -336,16 +334,13 @@ function CalendarGridView({
   onMoveSession,
   onDuplicateSession,
   onDeleteSession,
+  onMakeupDone,
+  onMakeupUndo,
 }) {
   const tutorNames = [...new Set(entries.map((e) => e.tutorName))].sort();
   const dragRef = useRef(null);
   const [dragOverCell, setDragOverCell] = useState(null); // `${tutorName}|${dayId}`
-  const isMobile = useMediaQuery("(max-width: 768px)");
-  // On mobile the 7-day table won't fit, so show one day at a time (default: today)
-  const [activeDay, setActiveDay] = useState(() => {
-    const map = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-    return map[new Date().getDay()];
-  });
+  const [makeupMenu, setMakeupMenu] = useState(null); // { entry, x, y }
 
   if (tutorNames.length === 0) {
     return (
@@ -392,36 +387,8 @@ function CalendarGridView({
     }
   };
 
-  const visibleDays = isMobile ? DAYS.filter((d) => d.id === activeDay) : DAYS;
-
   return (
     <div style={styles.gridViewWrap}>
-      {isMobile && (
-        <div style={styles.gridMobileDayPicker}>
-          {DAYS.map((day) => {
-            const date = addDays(weekMonday, day.offset);
-            const isActive = activeDay === day.id;
-            return (
-              <button
-                key={day.id}
-                onClick={() => setActiveDay(day.id)}
-                style={{
-                  ...styles.gridMobileDayBtn,
-                  background: isActive ? day.color : "#ffffff",
-                  color: isActive ? "#ffffff" : day.color,
-                  borderColor: day.color,
-                  fontWeight: isActive ? 800 : 600,
-                }}
-              >
-                <div>{day.short}</div>
-                <div style={{ fontSize: 9, opacity: 0.85 }}>
-                  {fmtShort(date)}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
       {sessionClipboard && (
         <div style={styles.gridClipboardBar}>
           <span>
@@ -433,13 +400,11 @@ function CalendarGridView({
           </span>
         </div>
       )}
-      <table
-        style={{ ...styles.gridTable, ...(isMobile ? { minWidth: 0 } : {}) }}
-      >
+      <table style={styles.gridTable}>
         <thead>
           <tr>
             <th style={styles.gridTableTutorHeaderCell}>Tutor</th>
-            {visibleDays.map((day) => {
+            {DAYS.map((day) => {
               const date = addDays(weekMonday, day.offset);
               return (
                 <th
@@ -486,7 +451,7 @@ function CalendarGridView({
                   </span>
                   {tutorName}
                 </td>
-                {visibleDays.map((day) => {
+                {DAYS.map((day) => {
                   const cellEntries = entries.filter(
                     (e) => e.tutorName === tutorName && e.dayId === day.id,
                   );
@@ -552,6 +517,16 @@ function CalendarGridView({
                                   key={entry.id}
                                   draggable
                                   onDragStart={(e) => handleDragStart(e, entry)}
+                                  onContextMenu={(e) => {
+                                    // Only rescheduled sessions get the make-up menu
+                                    if (entry.status !== "rescheduled") return;
+                                    e.preventDefault();
+                                    setMakeupMenu({
+                                      entry,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                    });
+                                  }}
                                   style={{
                                     ...styles.gridSessionChip,
                                     background: sb,
@@ -577,7 +552,11 @@ function CalendarGridView({
                                         fontFamily: "inherit",
                                       }}
                                       onClick={() => onCellClick(entry)}
-                                      title="Click to edit this session"
+                                      title={
+                                        entry.status === "rescheduled"
+                                          ? "Click to edit · right-click for make-up options"
+                                          : "Click to edit this session"
+                                      }
                                     >
                                       {time && (
                                         <div
@@ -604,6 +583,7 @@ function CalendarGridView({
                                           display: "flex",
                                           alignItems: "center",
                                           gap: 4,
+                                          flexWrap: "wrap",
                                         }}
                                       >
                                         <span
@@ -631,6 +611,23 @@ function CalendarGridView({
                                               ? "📚🚫"
                                               : "📚❓"}
                                         </span>
+                                        {entry.makeupDay && (
+                                          <span
+                                            title={`Make-up done on ${DAY_LABEL[entry.makeupDay] || entry.makeupDay}`}
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 800,
+                                              color: "#15803d",
+                                              background: "#dcfce7",
+                                              padding: "1px 5px",
+                                              borderRadius: 999,
+                                            }}
+                                          >
+                                            ✓ make-up{" "}
+                                            {DAY_LABEL[entry.makeupDay] ||
+                                              entry.makeupDay}
+                                          </span>
+                                        )}
                                       </div>
                                     </button>
                                     <button
@@ -685,17 +682,87 @@ function CalendarGridView({
       <div style={styles.gridHint}>
         💡 Drag a session chip to move it · hold{" "}
         <kbd style={styles.kbd}>Ctrl</kbd> while dragging to copy · click 📋 on
-        a chip to copy, then click any + to paste
+        a chip to copy, then click any + to paste ·{" "}
+        <strong>right-click a Rescheduled session</strong> to mark its make-up
+        done
       </div>
+
+      {makeupMenu && (
+        <>
+          <div
+            onClick={() => setMakeupMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMakeupMenu(null);
+            }}
+            style={{ position: "fixed", inset: 0, zIndex: 998 }}
+          />
+          <div
+            style={{
+              ...styles.makeupMenu,
+              left: Math.min(makeupMenu.x, window.innerWidth - 220),
+              top: Math.min(makeupMenu.y, window.innerHeight - 260),
+            }}
+          >
+            <div style={styles.makeupMenuHeader}>
+              🔁 {makeupMenu.entry.studentName}
+              <div style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>
+                Rescheduled from{" "}
+                {DAY_LABEL[makeupMenu.entry.dayId] || makeupMenu.entry.dayId}
+              </div>
+            </div>
+            {makeupMenu.entry.makeupDay ? (
+              <>
+                <div style={styles.makeupMenuNote}>
+                  ✓ Make-up done on{" "}
+                  <strong>
+                    {DAY_LABEL[makeupMenu.entry.makeupDay] ||
+                      makeupMenu.entry.makeupDay}
+                  </strong>
+                </div>
+                <button
+                  style={styles.makeupMenuUndo}
+                  onClick={() => {
+                    onMakeupUndo(makeupMenu.entry);
+                    setMakeupMenu(null);
+                  }}
+                >
+                  ↩ Undo make-up done
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={styles.makeupMenuLabel}>
+                  ✅ Make-up class happened on:
+                </div>
+                <div style={styles.makeupMenuDays}>
+                  {DAYS.map((d) => (
+                    <button
+                      key={d.id}
+                      style={{
+                        ...styles.makeupMenuDayBtn,
+                        borderColor: d.color + "55",
+                        color: d.color,
+                      }}
+                      onClick={() => {
+                        onMakeupDone(makeupMenu.entry, d.id);
+                        setMakeupMenu(null);
+                      }}
+                    >
+                      {d.short}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-export default function WeeklySchedule({
-  view = "schedule",
-  onExitReport,
-  scheduleAccess = true,
-} = {}) {
+export default function WeeklySchedule() {
   const today = useMemo(() => new Date(), []);
   const [weekMonday, setWeekMonday] = useState(() => getMonday(today));
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -711,19 +778,7 @@ export default function WeeklySchedule({
   const [busy, setBusy] = useState(false); // shown briefly during any action
   const [error, setError] = useState("");
 
-  // Which schedule is active: "tutoring" (1-on-1) or "coding" (group classes). Persisted.
-  const [scheduleKind, setScheduleKind] = useState(
-    () => localStorage.getItem("scheduleKind") || "tutoring",
-  );
-  useEffect(() => {
-    localStorage.setItem("scheduleKind", scheduleKind);
-  }, [scheduleKind]);
-  // Coding data lives under a "c:" key namespace so it never mixes with 1-on-1.
-  // ("c:2026-W28" is 10 chars — fits the week_key column exactly.)
-  const kindPrefix = scheduleKind === "coding" ? "c:" : "";
-  const nsKey = (monday) => kindPrefix + weekKey(monday);
-
-  const wKey = nsKey(weekMonday);
+  const wKey = weekKey(weekMonday);
 
   // CORE: reload from server — this is the source of truth
   const reload = useCallback(async () => {
@@ -753,17 +808,11 @@ export default function WeeklySchedule({
     }
   }, [wKey]);
 
-  // Initial / week-change load.
-  // Report-only users (no schedule access) skip the schedule fetch entirely —
-  // the Audio Report loads its own data via openReport().
+  // Initial / week-change load
   useEffect(() => {
-    if (view === "report" && !scheduleAccess) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     reload().finally(() => setLoading(false));
-  }, [reload, view, scheduleAccess]);
+  }, [reload]);
   useEffect(() => {
     const ANCHOR = "2026-05-18";
     const anchor = new Date(ANCHOR);
@@ -888,7 +937,7 @@ export default function WeeklySchedule({
   const [reportWeekMonday, setReportWeekMonday] = useState(() =>
     getMonday(today),
   );
-  const reportWKey = nsKey(reportWeekMonday);
+  const reportWKey = weekKey(reportWeekMonday);
   const [reportManualEntries, setReportManualEntries] = useState([]);
   const [reportWeekExpectations, setReportWeekExpectations] = useState({});
   const [reportAudioReceived, setReportAudioReceived] = useState({});
@@ -1053,58 +1102,6 @@ export default function WeeklySchedule({
     }
   };
 
-  // Delete EVERY audio-report entry for the week currently shown. Destructive — confirms first.
-  const clearAllAudioEntries = async () => {
-    if (reportManualEntries.length === 0) {
-      flash("Nothing to clear — this week is already empty");
-      return;
-    }
-    const label = `${fmtShort(reportWeekMonday)} – ${fmtShort(addDays(reportWeekMonday, 6))}`;
-    if (
-      !window.confirm(
-        `Delete ALL ${reportManualEntries.length} audio entr${reportManualEntries.length === 1 ? "y" : "ies"} for ${label}?\n\nThis permanently removes them and cannot be undone.`,
-      )
-    )
-      return;
-
-    setReportLoading(true);
-    try {
-      for (const entry of reportManualEntries) {
-        await api.deleteManualEntry(entry.id);
-      }
-      setReportManualEntries([]);
-      flash("Cleared all audio entries for this week");
-    } catch (err) {
-      flash(err.message || "Failed to clear — reloading");
-      const refreshed = await api.getManualEntries(reportWKey).catch(() => []);
-      setReportManualEntries(refreshed || []);
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  // Delete EVERY audio entry for ALL weeks. Requires typing DELETE to confirm.
-  const clearAllAudioEntriesAllWeeks = async () => {
-    const typed = window.prompt(
-      "⚠ This permanently deletes EVERY audio entry for ALL weeks (all history).\n\nType DELETE to confirm:",
-    );
-    if (typed === null) return; // cancelled
-    if (typed.trim() !== "DELETE") {
-      flash("Cancelled — you must type DELETE exactly");
-      return;
-    }
-    setReportLoading(true);
-    try {
-      await api.clearAllManualEntries();
-      setReportManualEntries([]);
-      flash("Deleted all audio entries for every week");
-    } catch (err) {
-      flash(err.message || "Failed to clear all weeks");
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
   // Copy a session entry to clipboard
   const copySessionEntry = (entry) => {
     setSessionClipboard(entry);
@@ -1185,6 +1182,9 @@ export default function WeeklySchedule({
   // Build per-tutor WhatsApp reminder messages for sessions not yet uploaded/reviewed
   const buildDailyReminderMessages = () => {
     const now = new Date();
+    const todayStr = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][
+      now.getDay()
+    ];
 
     // Group pending/not-sent entries by tutor for today and overdue days
     const tutorMap = {};
@@ -1197,15 +1197,11 @@ export default function WeeklySchedule({
       const day = DAYS.find((d) => d.id === entry.dayId);
       if (!day) return;
 
-      // Only remind about sessions from PREVIOUS days. Today's sessions may not have
-      // happened yet (e.g. a 9 PM class while it's 2 PM), and the stored session time
-      // can't be trusted to tell — so excluding today guarantees we never nag a tutor
-      // about a session that hasn't started. Genuinely-late sessions still surface here
-      // the next day, and the 24hr Overdue tracker covers the strict 24h rule.
-      const dayDate = addDays(reportWeekMonday, day.offset);
-      const startOfToday = new Date(now);
-      startOfToday.setHours(0, 0, 0, 0);
-      if (dayDate >= startOfToday) return; // skip today and future days
+      // Include today's sessions AND any earlier days that are still pending
+      const sessionDate = addDays(reportWeekMonday, day.offset);
+      const sessionDateStr = fmtISO(sessionDate);
+      const todayDateStr = fmtISO(now);
+      if (sessionDateStr > todayDateStr) return; // skip future sessions
 
       if (!tutorMap[entry.tutorName]) tutorMap[entry.tutorName] = [];
       tutorMap[entry.tutorName].push({ ...entry, day });
@@ -1273,6 +1269,20 @@ export default function WeeklySchedule({
       flash(err.message || "Failed to update");
     }
   };
+
+  // Mark a rescheduled session's make-up as done on a given day.
+  // Keeps status "rescheduled" (so the badge/history is preserved) but records makeupDay,
+  // which makes it count as reviewed in the totals below.
+  const handleMakeupDone = async (entry, makeupDayId) => {
+    await patchManualEntry(entry.id, { makeupDay: makeupDayId });
+    flash(
+      `✅ Make-up marked done on ${DAY_LABEL[makeupDayId] || makeupDayId} — now counts as reviewed`,
+    );
+  };
+  const handleMakeupUndo = async (entry) => {
+    await patchManualEntry(entry.id, { makeupDay: null });
+    flash("↩ Make-up done cleared");
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const matchesSearch = (text) =>
@@ -1316,7 +1326,7 @@ export default function WeeklySchedule({
   };
 
   const copyFromPreviousWeek = async () => {
-    const prevKey = nsKey(addDays(weekMonday, -7));
+    const prevKey = weekKey(addDays(weekMonday, -7));
     if (
       !window.confirm(
         "Replace this week's schedule with a fresh copy of last week's?",
@@ -1800,10 +1810,9 @@ export default function WeeklySchedule({
   const showChecklist = !!activeReview;
 
   // Load report data for a specific week (independent from schedule week)
-  const loadReportWeek = useCallback(
-    async (monday) => {
+  const loadReportWeek = useCallback(async (monday) => {
     setReportLoading(true);
-    const rKey = kindPrefix + weekKey(monday);
+    const rKey = weekKey(monday);
     try {
       const [manual, weekExp, received, notes, groups] = await Promise.all([
         api.getManualEntries(rKey).catch(() => []),
@@ -1822,49 +1831,46 @@ export default function WeeklySchedule({
     } finally {
       setReportLoading(false);
     }
-    },
-    [kindPrefix],
-  );
+  }, []);
 
-  // When the report opens, always show the CURRENT week (stable/predictable).
-  // Past weeks are reachable with the ‹ / › arrows via loadReportWeek().
+  // When report opens or week changes, load that week's data
   const openReport = async () => {
     setShowReport(true);
     setReportLoading(true);
-    const currentMonday = getMonday(today);
-    setReportWeekMonday(currentMonday);
     try {
-      const wk = nsKey(currentMonday);
-      const [entries, weekExp, received, notes] = await Promise.all([
-        api.getManualEntries(wk).catch(() => []),
-        api.getWeekExpectations(wk).catch(() => ({})),
-        api.getAudioReceived(wk).catch(() => ({})),
-        api.getDayNotes(wk).catch(() => ({})),
-      ]);
-      setReportManualEntries(entries || []);
-      setReportWeekExpectations(weekExp || {});
-      setReportAudioReceived(received || {});
-      setReportDayNotes(notes || {});
+      // Try current week first, then next week, then prev week — open whichever has data
+      const currentMonday = getMonday(today);
+      const weeks = [
+        addDays(currentMonday, 7), // next week
+        currentMonday, // this week
+        addDays(currentMonday, -7), // prev week
+      ];
+      for (const monday of weeks) {
+        const entries = await api
+          .getManualEntries(weekKey(monday))
+          .catch(() => []);
+        if (entries && entries.length > 0) {
+          setReportWeekMonday(monday);
+          const [weekExp, received, notes] = await Promise.all([
+            api.getWeekExpectations(weekKey(monday)).catch(() => ({})),
+            api.getAudioReceived(weekKey(monday)).catch(() => ({})),
+            api.getDayNotes(weekKey(monday)).catch(() => ({})),
+          ]);
+          setReportManualEntries(entries);
+          setReportWeekExpectations(weekExp || {});
+          setReportAudioReceived(received || {});
+          setReportDayNotes(notes || {});
+          return;
+        }
+      }
+      // No entries found anywhere — default to current week empty
+      setReportWeekMonday(currentMonday);
+      setReportManualEntries([]);
     } catch (err) {
       flash("Failed to load report");
     } finally {
       setReportLoading(false);
     }
-  };
-
-  // When rendered as the "Audio Report" tab, open the report automatically;
-  // when switching away from that tab, make sure the report is closed.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (view === "report") openReport();
-    else setShowReport(false);
-  }, [view]);
-
-  // Closing the report: in tab mode, switch back to the Schedule tab;
-  // as a modal (opened from the button), just hide the overlay.
-  const exitReport = () => {
-    if (view === "report" && onExitReport) onExitReport();
-    else setShowReport(false);
   };
 
   const goReportPrev = () => {
@@ -1898,7 +1904,7 @@ export default function WeeklySchedule({
       return;
     }
     const nextMonday = addDays(reportWeekMonday, 7);
-    const nextKey = nsKey(nextMonday);
+    const nextKey = weekKey(nextMonday);
 
     const existingNext = await api.getManualEntries(nextKey).catch(() => []);
     if (existingNext && existingNext.length > 0) {
@@ -1965,8 +1971,8 @@ export default function WeeklySchedule({
       const dueDateFinal = afterEnd.getDay() === 2 ? afterEnd : dueDate;
 
       const [entries1, entries2] = await Promise.all([
-        api.getManualEntries(nsKey(week1Monday)).catch(() => []),
-        api.getManualEntries(nsKey(week2Monday)).catch(() => []),
+        api.getManualEntries(weekKey(week1Monday)).catch(() => []),
+        api.getManualEntries(weekKey(week2Monday)).catch(() => []),
       ]);
 
       const allEntries = [...entries1, ...entries2];
@@ -2051,7 +2057,6 @@ export default function WeeklySchedule({
       sessionTime,
     } = editingEntry;
     // Safety net: a filename with status still left on "pending" is almost certainly an oversight.
-
     const effectiveStatus =
       audioFilename?.trim() && status === "pending" ? "uploaded" : status;
     try {
@@ -2152,8 +2157,7 @@ export default function WeeklySchedule({
       const dayDateISO = fmtISO(dayDate);
       const isPast = dayDateISO < todayISO;
       const isToday = dayDateISO === todayISO;
-      const audioSent =
-        entry.status === "uploaded" || entry.status === "reviewed";
+      const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
 
       if (!tutorMap[entry.tutorName]) {
@@ -2297,43 +2301,21 @@ export default function WeeklySchedule({
     reportManualEntries.forEach((entry) => {
       const day = DAYS.find((d) => d.id === entry.dayId);
       if (!day) return;
-      const audioSent =
-        entry.status === "uploaded" || entry.status === "reviewed";
+      const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
       const isCancelled = entry.status === "cancelled";
       if (audioSent || isAbsent || isCancelled) return; // not overdue if sent/absent/cancelled
 
-      // The session's DATE is authoritative from its scheduled day in THIS week
-      // (dayId + week Monday) — NOT from the stored sessionTime's date, which can be
-      // stale/wrong (e.g. old rows are all anchored to Monday). Only the TIME-OF-DAY
-      // comes from sessionTime. This keeps the day pill, the "Session:" date and the
-      // deadline consistent, and stops a future day (e.g. Wed while today is Tue) from
-      // ever being counted as overdue.
-      const dayDate = addDays(reportWeekMonday, day.offset); // midnight of the scheduled day
-      const sessionMoment = new Date(dayDate);
-      let hasRealTime = false;
+      // Use actual session time if recorded; otherwise estimate from the day (midnight)
+      let sessionMoment;
       if (entry.sessionTime) {
-        const t = new Date(entry.sessionTime);
-        // Exactly-midnight is treated as "no real time recorded" — it's the placeholder
-        // used when nobody logged when the session actually happened.
-        if (t.getHours() !== 0 || t.getMinutes() !== 0) {
-          sessionMoment.setHours(t.getHours(), t.getMinutes(), 0, 0);
-          hasRealTime = true;
-        }
-      }
-      // Deadline:
-      //  • real time recorded → exactly 24h after the session.
-      //  • no reliable time → the session could have been as late as 11:59 PM that day,
-      //    so we can only be SURE a full 24h has elapsed at the END of the FOLLOWING day
-      //    (midnight two days after the session day). This stops a session that is
-      //    actually < 24h old from being flagged just because its time defaulted to midnight.
-      let deadline;
-      if (hasRealTime) {
-        deadline = new Date(sessionMoment);
-        deadline.setHours(deadline.getHours() + 24);
+        sessionMoment = new Date(entry.sessionTime);
       } else {
-        deadline = addDays(dayDate, 2); // day + 2 @ 00:00
+        sessionMoment = addDays(reportWeekMonday, day.offset);
       }
+      // Deadline = session time + 24 hours
+      const deadline = new Date(sessionMoment);
+      deadline.setHours(deadline.getHours() + 24);
 
       const hoursLate = Math.floor((now - deadline) / 3600000);
       const isOverdue = now > deadline;
@@ -2347,7 +2329,7 @@ export default function WeeklySchedule({
           dayShort: day.short,
           dayColor: day.color,
           sessionDate: sessionMoment,
-          hasExactTime: hasRealTime,
+          hasExactTime: !!entry.sessionTime,
           deadline,
           hoursLate,
           daysLate: Math.floor(hoursLate / 24),
@@ -2395,7 +2377,6 @@ export default function WeeklySchedule({
               ? "minmax(0,1fr)"
               : "minmax(0, 1fr) minmax(440px, 50%)"
             : "minmax(0, 1fr) 0px",
-          ...(view === "report" ? { display: "none" } : {}),
         }}
       >
         <main style={styles.main}>
@@ -2423,15 +2404,7 @@ export default function WeeklySchedule({
                 alignItems: isMobile ? "stretch" : "center",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  flexDirection: isMobile ? "column" : "row",
-                  width: isMobile ? "100%" : undefined,
-                }}
-              >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button style={styles.navBtn} onClick={goPrev}>
                   ← Prev
                 </button>
@@ -2455,51 +2428,7 @@ export default function WeeklySchedule({
                   ↻
                 </button>
               </div>
-              {/* Switch between the 1-on-1 and Coding (group) schedules */}
-              <div
-                style={{
-                  display: "inline-flex",
-                  border: "1.5px solid #e2e8f0",
-                  borderRadius: 10,
-                  overflow: "hidden",
-                  alignSelf: "center",
-                }}
-              >
-                {[
-                  { key: "tutoring", label: "👤 1-on-1" },
-                  { key: "coding", label: "👥 Coding" },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setScheduleKind(opt.key)}
-                    title={
-                      opt.key === "coding"
-                        ? "Group coding classes (separate schedule)"
-                        : "One-on-one tutoring"
-                    }
-                    style={{
-                      padding: "8px 14px",
-                      border: "none",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      background: scheduleKind === opt.key ? "#2563eb" : "#f8fafc",
-                      color: scheduleKind === opt.key ? "#fff" : "#475569",
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                  flexDirection: isMobile ? "column" : "row",
-                  width: isMobile ? "100%" : undefined,
-                }}
-              >
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button style={styles.navBtnAlt} onClick={copyFromPreviousWeek}>
                   ↺ Copy last week
                 </button>
@@ -4493,34 +4422,18 @@ export default function WeeklySchedule({
       {/* === Audio Report Modal === */}
       {showReport && (
         <div
-          style={
-            view === "report"
-              ? styles.reportPageWrap
-              : { ...styles.modalBackdrop, padding: 0 }
-          }
-          onClick={view === "report" ? undefined : () => setShowReport(false)}
+          style={{ ...styles.modalBackdrop, padding: 0 }}
+          onClick={() => setShowReport(false)}
         >
           <div
-            style={
-              view === "report"
-                ? {
-                    ...styles.reportModal,
-                    maxWidth: "100%",
-                    width: "100%",
-                    maxHeight: "none",
-                    height: "auto",
-                    borderRadius: 0,
-                    boxShadow: "none",
-                  }
-                : {
-                    ...styles.reportModal,
-                    maxWidth: "100%",
-                    width: "100%",
-                    maxHeight: "100vh",
-                    height: "100vh",
-                    borderRadius: 0,
-                  }
-            }
+            style={{
+              ...styles.reportModal,
+              maxWidth: "100%",
+              width: "100%",
+              maxHeight: "100vh",
+              height: "100vh",
+              borderRadius: 0,
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -4605,11 +4518,12 @@ export default function WeeklySchedule({
               {reportLoading && (
                 <div style={{ fontSize: 12, color: "#94a3b8" }}>Loading…</div>
               )}
-              {(view !== "report" || onExitReport) && (
-                <button style={styles.reportClose} onClick={exitReport}>
-                  ×
-                </button>
-              )}
+              <button
+                style={styles.reportClose}
+                onClick={() => setShowReport(false)}
+              >
+                ×
+              </button>
             </div>
 
             <div
@@ -4821,7 +4735,9 @@ export default function WeeklySchedule({
                                 0,
                                 0,
                               );
-                              newSessionTime = merged.toISOString();
+                              newSessionTime = merged
+                                .toISOString()
+                                .slice(0, 16);
                             }
                             return {
                               ...p,
@@ -4939,7 +4855,7 @@ export default function WeeklySchedule({
                               merged.setHours(h, m, 0, 0);
                               setManualForm((p) => ({
                                 ...p,
-                                sessionTime: merged.toISOString(),
+                                sessionTime: merged.toISOString().slice(0, 16),
                               }));
                             }}
                           />
@@ -5060,6 +4976,8 @@ export default function WeeklySchedule({
                           onMoveSession={moveSessionEntry}
                           onDuplicateSession={duplicateSessionEntry}
                           onDeleteSession={deleteManualEntry}
+                          onMakeupDone={handleMakeupDone}
+                          onMakeupUndo={handleMakeupUndo}
                         />
                       ) : (
                         (() => {
@@ -5086,11 +5004,7 @@ export default function WeeklySchedule({
                             const allE = tg.studentOrder.flatMap(
                               (s) => tg.students[s],
                             );
-                            const sent = allE.filter(
-                              (e) =>
-                                e.status === "uploaded" ||
-                                e.status === "reviewed",
-                            ).length;
+                            const sent = allE.filter(countsAsSent).length;
                             const tutorColor = [
                               "#2563eb",
                               "#0891b2",
@@ -5137,11 +5051,8 @@ export default function WeeklySchedule({
                                 <div style={styles.newStudentList}>
                                   {tg.studentOrder.map((studentName, si) => {
                                     const entries = tg.students[studentName];
-                                    const sSent = entries.filter(
-                                      (e) =>
-                                        e.status === "uploaded" ||
-                                        e.status === "reviewed",
-                                    ).length;
+                                    const sSent =
+                                      entries.filter(countsAsSent).length;
                                     const studentColors = [
                                       "#7c3aed",
                                       "#db2777",
@@ -5858,34 +5769,11 @@ export default function WeeklySchedule({
                 📊 2-Week Summary
               </button>
               <button
-                style={{
-                  ...styles.btnGhost,
-                  color: "#d97706",
-                  borderColor: "#fcd34d",
-                }}
-                onClick={clearAllAudioEntries}
-                disabled={reportLoading}
-                title="Delete all audio entries for the week shown"
+                style={styles.btnPrimary}
+                onClick={() => setShowReport(false)}
               >
-                🗑️ Clear This Week
+                Close
               </button>
-              <button
-                style={{
-                  ...styles.btnGhost,
-                  color: "#dc2626",
-                  borderColor: "#fca5a5",
-                }}
-                onClick={clearAllAudioEntriesAllWeeks}
-                disabled={reportLoading}
-                title="Delete ALL audio entries for every week (type-to-confirm)"
-              >
-                🗑️ Clear ALL Weeks
-              </button>
-              {(view !== "report" || onExitReport) && (
-                <button style={styles.btnPrimary} onClick={exitReport}>
-                  {view === "report" ? "← Back to Schedule" : "Close"}
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -5992,7 +5880,9 @@ export default function WeeklySchedule({
                 style={styles.input}
                 value={
                   editingEntry.sessionTime
-                    ? toLocalInputValue(editingEntry.sessionTime)
+                    ? new Date(editingEntry.sessionTime)
+                        .toISOString()
+                        .slice(0, 16)
                     : ""
                 }
                 onChange={(e) =>
@@ -6782,8 +6672,8 @@ export default function WeeklySchedule({
                               </div>
                               <div style={{ fontSize: 10.5, color: "#94a3b8" }}>
                                 {item.hasExactTime
-                                  ? `Session: ${item.sessionDate.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · Due (+24h): ${item.deadline.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-                                  : `No exact time set — overdue after ${item.deadline.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric" })}`}
+                                  ? `Session: ${item.sessionDate.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                                  : `No exact time set — using ${item.dayShort} estimate`}
                               </div>
                             </div>
                             <span style={styles.overdueTimeBadge}>
@@ -7262,9 +7152,9 @@ export default function WeeklySchedule({
 
                     {tutorNames.map((tutorName) => {
                       const entries = tutorMap[tutorName];
-                      const daysList = [
-                        ...new Set(entries.map((e) => e.day.label)),
-                      ].join(", ");
+                      const daysList = entries
+                        .map((e) => e.day.label)
+                        .join(", ");
 
                       const message = [
                         `Hi ${tutorName},`,
@@ -7331,9 +7221,9 @@ export default function WeeklySchedule({
                           const allMessages = tutorNames
                             .map((tutorName) => {
                               const entries = tutorMap[tutorName];
-                              const daysList = [
-                                ...new Set(entries.map((e) => e.day.label)),
-                              ].join(", ");
+                              const daysList = entries
+                                .map((e) => e.day.label)
+                                .join(", ");
                               return [
                                 `Hi ${tutorName},`,
                                 ``,
@@ -7885,13 +7775,10 @@ const styles = {
     fontSize: 12.5,
     fontWeight: 600,
     fontFamily: "inherit",
-    color: "#334155",
-    WebkitTextFillColor: "#334155",
   },
   navBtnActive: {
     borderColor: "#2563eb",
     color: "#2563eb",
-    WebkitTextFillColor: "#2563eb",
     background: "#eff6ff",
   },
   navBtnAlt: {
@@ -8736,10 +8623,6 @@ const styles = {
   },
 
   // === Report Modal ===
-  reportPageWrap: {
-    background: "#ffffff",
-    minHeight: "calc(100vh - 57px)",
-  },
   reportModal: {
     background: "#ffffff",
     borderRadius: 18,
@@ -9724,25 +9607,6 @@ const styles = {
 
   // Calendar Grid view (tutor x day timetable)
   gridViewWrap: { overflowX: "auto", padding: "12px" },
-  gridMobileDayPicker: {
-    display: "flex",
-    gap: 6,
-    overflowX: "auto",
-    paddingBottom: 10,
-    WebkitOverflowScrolling: "touch",
-  },
-  gridMobileDayBtn: {
-    flex: "0 0 auto",
-    minWidth: 48,
-    padding: "6px 10px",
-    borderRadius: 8,
-    border: "1.5px solid",
-    fontSize: 11,
-    lineHeight: 1.25,
-    textAlign: "center",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
   gridTable: {
     width: "100%",
     borderCollapse: "separate",
@@ -9874,6 +9738,66 @@ const styles = {
     color: "#94a3b8",
     padding: "10px 4px 2px",
     textAlign: "center",
+  },
+
+  makeupMenu: {
+    position: "fixed",
+    zIndex: 999,
+    background: "#fff",
+    borderRadius: 12,
+    border: "1px solid #e2e8f0",
+    boxShadow: "0 12px 32px -8px rgba(15,23,42,0.25)",
+    padding: 12,
+    width: 210,
+  },
+  makeupMenuHeader: {
+    fontSize: 12.5,
+    fontWeight: 800,
+    color: "#0f172a",
+    marginBottom: 8,
+    paddingBottom: 8,
+    borderBottom: "1px solid #f1f5f9",
+  },
+  makeupMenuLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#334155",
+    marginBottom: 6,
+  },
+  makeupMenuDays: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 5,
+  },
+  makeupMenuDayBtn: {
+    padding: "6px 0",
+    borderRadius: 7,
+    border: "1.5px solid",
+    background: "#fff",
+    cursor: "pointer",
+    fontSize: 11,
+    fontWeight: 800,
+    fontFamily: "inherit",
+  },
+  makeupMenuNote: {
+    fontSize: 11.5,
+    color: "#15803d",
+    background: "#dcfce7",
+    borderRadius: 8,
+    padding: "8px 10px",
+    marginBottom: 8,
+  },
+  makeupMenuUndo: {
+    width: "100%",
+    padding: "8px 0",
+    borderRadius: 8,
+    border: "1px solid #fca5a5",
+    background: "#fef2f2",
+    color: "#b91c1c",
+    cursor: "pointer",
+    fontSize: 11.5,
+    fontWeight: 700,
+    fontFamily: "inherit",
   },
 
   // Tutor card (blue identity)
