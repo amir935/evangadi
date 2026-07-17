@@ -1189,7 +1189,7 @@ export default function WeeklySchedule() {
     // Group pending/not-sent entries by tutor for today and overdue days
     const tutorMap = {};
     reportManualEntries.forEach((entry) => {
-      const isSent = entry.status === "uploaded" || entry.status === "reviewed";
+      const isSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
       const isCancelled = entry.status === "cancelled";
       if (isSent || isAbsent || isCancelled) return;
@@ -1997,8 +1997,7 @@ export default function WeeklySchedule() {
           };
         }
         const t = tutorMap[key];
-        const isSent =
-          entry.status === "uploaded" || entry.status === "reviewed";
+        const isSent = countsAsSent(entry);
         const isCancelled = entry.status === "cancelled";
         const isAbsent = entry.status === "absent";
         const isWeek1 = entries1.some((e) => e.id === entry.id);
