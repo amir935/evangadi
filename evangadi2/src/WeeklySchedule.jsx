@@ -1197,11 +1197,12 @@ export default function WeeklySchedule() {
       const day = DAYS.find((d) => d.id === entry.dayId);
       if (!day) return;
 
-      // Include today's sessions AND any earlier days that are still pending
+      // Only remind for sessions whose day has fully passed (not today's — today's audio
+      // isn't overdue yet). e.g. on Friday, remind about Thu and earlier, not Fri.
       const sessionDate = addDays(reportWeekMonday, day.offset);
       const sessionDateStr = fmtISO(sessionDate);
       const todayDateStr = fmtISO(now);
-      if (sessionDateStr > todayDateStr) return; // skip future sessions
+      if (sessionDateStr >= todayDateStr) return; // skip today's and future sessions
 
       if (!tutorMap[entry.tutorName]) tutorMap[entry.tutorName] = [];
       tutorMap[entry.tutorName].push({ ...entry, day });
