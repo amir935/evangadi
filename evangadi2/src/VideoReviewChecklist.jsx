@@ -101,6 +101,25 @@ const GROUP_SECTION = {
 };
 
 const OBSERVATIONS = {
+  excellent: {
+    label: "Excellent Tutor",
+    color: "#15803d",
+    items: [
+      { text: "Excellent session — well-prepared, clearly explained, and the student stayed engaged throughout" },
+      { text: "Strong delivery: concepts broken down step by step, understanding checked before moving on" },
+      { text: "Excellent explanation quality — built the concept up from basics with relevant, level-appropriate examples" },
+      { text: "Tutor guided the student to the answer instead of giving it — textbook questioning technique" },
+      { text: "Excellent engagement — asked open questions, waited for answers, and encouraged the student to explain their reasoning" },
+      { text: "Warm rapport and consistent encouragement — the student was confident and comfortable participating" },
+      { text: "Started on time, covered the full objective, balanced pacing, and closed with a clear recap" },
+      { text: "Excellent use of visuals / document camera / whiteboard to make the concept concrete" },
+      { text: "Very strong live coding: typed everything out, narrated the reasoning, and turned errors into learning moments" },
+      { text: "Ran the session as a real group discussion — students were actively helping each other" },
+      { text: "Every student participated and each one's work was recognised by name" },
+      { text: "Excellent — prepared, clear, engaging, well-paced. No issues noted" },
+      { text: "This session is a good example to share with other tutors as a model" },
+    ],
+  },
   strengths: {
     label: "Strengths",
     color: "#059669",
