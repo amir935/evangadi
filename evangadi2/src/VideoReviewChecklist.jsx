@@ -15,6 +15,11 @@ import api from "./api";
  * - Loads past reviews for this student from /api/reviews/student/:studentId
  * - "Save to server" sends review to MySQL
  * - "Export .docx" still works (download Word doc) — optional folder save
+ *
+ * Added:
+ * - 1-on-1 Coding checklist section (own toggle, separate from Group Coding)
+ * - Session score out of 100 with a visible breakdown
+ * - Feedback for the Tutor section, draftable from the selected observations
  */
 
 function useMediaQuery(query) {
@@ -100,6 +105,50 @@ const GROUP_SECTION = {
   ],
 };
 
+// Extra section shown ONLY for 1-on-1 coding sessions.
+// Ordered the way the session runs: open → concept → demo → practice →
+// debugging → checking understanding → close.
+const CODING_SECTION = {
+  id: "code",
+  title: "1-on-1 Coding Session",
+  accent: "#0d9488",
+  items: [
+    // Opening
+    "Reviewed the previous session's code and checked what the student retained",
+    "Stated what the session would build or cover",
+    "Confirmed the student's editor and screen share were working before starting",
+    // Concept
+    "Explained the concept before writing code, not only while typing",
+    "Explained each new term when it was introduced (tag, attribute, selector, property, function, variable)",
+    "Explained WHY — why this approach, why this structure — not only how",
+    "Connected the new concept to code the student had already written",
+    // Demonstration
+    "Wrote code live rather than pasting finished code",
+    "Code was readable on screen — font size large enough, only relevant lines visible",
+    "Ran the code and showed the result after each small change",
+    // Student practice
+    "Student wrote and ran code themselves during the session",
+    "Gave the student an exercise immediately after the demonstration",
+    "Student typed the code rather than copying a pasted block",
+    "Watched the student code live instead of only checking the finished result",
+    "Demonstrated one example, then handed the next one to the student",
+    // Errors & debugging
+    "Let the student find the error before pointing to it",
+    "Taught the student to read the error message / use the console or inspector",
+    "Explained the cause of the bug, not only the fix",
+    "Did not take over the student's keyboard or screen control to fix it",
+    // Checking understanding
+    "Asked the student to explain in their own words what the code does",
+    "Asked open questions instead of 'do you understand?'",
+    "Verified understanding with a working exercise, not only verbal confirmation",
+    // Closing
+    "Asked the student to summarize the session before recapping it himself",
+    "Recapped the key points after the student's attempt",
+    "Assigned practice work to complete before the next session",
+    "Named what the next session will cover",
+  ],
+};
+
 const OBSERVATIONS = {
   excellent: {
     label: "Excellent Tutor",
@@ -112,7 +161,7 @@ const OBSERVATIONS = {
       { text: "Excellent engagement — asked open questions, waited for answers, and encouraged the student to explain their reasoning" },
       { text: "Warm rapport and consistent encouragement — the student was confident and comfortable participating" },
       { text: "Started on time, covered the full objective, balanced pacing, and closed with a clear recap" },
-      { text: "Excellent use of visuals / document camera / whiteboard to make the concept concrete" },
+      { text: "Excellent use of visuals — annotation on the lesson material, whiteboard, document camera, or paper shown to the camera — to make the concept concrete" },
       { text: "Very strong live coding: typed everything out, narrated the reasoning, and turned errors into learning moments" },
       { text: "Ran the session as a real group discussion — students were actively helping each other" },
       { text: "Every student participated and each one's work was recognised by name" },
@@ -147,6 +196,19 @@ const OBSERVATIONS = {
       {
         text: "Tutor noted the student's grade is remarkable — even the school teacher praised her",
       },
+      // — added —
+      { text: "Tutor opened by asking recall questions from the previous class, then continued from that point" },
+      { text: "Tutor annotated directly on the lesson material while explaining" },
+      { text: "Tutor had the student work on paper and show it to the camera" },
+      { text: "Tutor set a short time limit and told the student their work would be checked" },
+      { text: "Tutor moved the rest of the group to a breakout room and gave one-to-one support to the student who was behind" },
+      { text: "Tutor checked the group's confidence and gave more practice instead of moving to a new topic" },
+      { text: "Tutor guided the student to blend the word in chunks instead of supplying it" },
+      { text: "Tutor had the student read the question aloud before attempting it" },
+      { text: "Student's graph work was accurate — axes labeled, points plotted, intersection read correctly" },
+      { text: "Student attempted the closing summary and completed it with tutor support" },
+      { text: "Student improved with support during the session but has not yet reached independent accuracy" },
+      { text: "Students continued helping each other after the tutor left the session" },
     ],
   },
   improvements: {
@@ -235,6 +297,31 @@ const OBSERVATIONS = {
         text: "Don't answer the question yourself — always encourage the student to answer",
         unchecks: ["during-1", "during-2"],
       },
+      // — added —
+      {
+        text: "Encouragement was generic ('good job') — name the specific action the student did well",
+      },
+      {
+        text: "Tutor raised the student's missed session in front of the group — better done privately",
+      },
+      {
+        text: "Practice stayed at single-word / single-problem level — return to the full sentence or a new problem",
+      },
+      {
+        text: "Student decoded the word correctly in isolation but did not apply the strategy to new words",
+      },
+      {
+        text: "Student omitted the final syllable of a long word — stops tracking letters after recognizing the beginning",
+      },
+      {
+        text: "Session ran as a one-way lecture — long explanation with no hands-on time",
+        unchecks: ["during-1"],
+      },
+      { text: "Tutor ended the session before the scheduled end time", unchecks: ["end-0"] },
+      {
+        text: "Tutor left partway through the scheduled session once his own material was finished",
+        unchecks: ["end-0", "end-6"],
+      },
     ],
   },
   parents: {
@@ -295,6 +382,9 @@ const OBSERVATIONS = {
       {
         text: "Please ask which chapter the child is currently studying in school so the tutor can match the pace",
       },
+      {
+        text: "Session time lost to late arrival is not made up — please help the student join at the scheduled time",
+      },
     ],
   },
   technical: {
@@ -351,6 +441,18 @@ const OBSERVATIONS = {
       {
         text: "More than 20 minutes were lost due to distractions and screen-sharing interruptions",
       },
+      // — added — tutor lateness is scored, student lateness is not
+      {
+        text: "Tutor joined approximately 8 minutes late",
+        unchecks: ["start-0"],
+        tutorLate: true,
+      },
+      {
+        text: "Tutor joined late and extended the session to recover the full duration",
+        unchecks: ["start-0"],
+        tutorLate: true,
+      },
+      { text: "Student joined late; tutor ended at the scheduled time as expected" },
     ],
   },
   coding: {
@@ -446,7 +548,8 @@ const OBSERVATIONS = {
       },
       {
         text: "Tool used was age-appropriate and visual (e.g. Scratch/blocks) for young kids",
-      }, // === HTML & CSS fundamentals — kid-friendly ===
+      },
+      // === HTML & CSS fundamentals — kid-friendly ===
       {
         text: "Tutor explained what a tag or property does before using it (e.g., '<h1> makes a big heading', 'color changes the text color')",
       },
@@ -485,6 +588,64 @@ const OBSERVATIONS = {
       {
         text: "Every child left with something visual and personal to show — real ownership over their own page",
       },
+      {
+        text: "After the tutor explained HTML class naming and CSS selectors, students worked collaboratively and helped each other resolve issues",
+      },
+      {
+        text: "Students continued helping each other after the tutor left the session",
+      },
+    ],
+  },
+  coding1: {
+    label: "1-on-1 Coding",
+    color: "#0d9488",
+    items: [
+      // — Positives —
+      { text: "Explained the concept and the reasoning before writing any code" },
+      { text: "Wrote all code live and narrated each line as it was typed" },
+      { text: "Ran the code after each small change so the student saw the effect immediately" },
+      { text: "Student wrote and ran the code themselves for most of the session" },
+      { text: "Demonstrated one example, then handed the next problem to the student" },
+      { text: "Let the student find the bug themselves and guided them to the cause" },
+      { text: "Taught the student to read the error message instead of fixing it for them" },
+      { text: "Asked the student to explain the code back in their own words" },
+      { text: "Student summarized the session before the tutor recapped it" },
+      { text: "Explained HTML class naming and CSS selectors, then had the student apply them immediately" },
+      { text: "Used annotation or a whiteboard to diagram the structure before coding it" },
+      { text: "Assigned specific practice work and named the next session's topic" },
+      { text: "Adjusted the pace to this student rather than following a fixed plan" },
+      { text: "Checked whether the student felt confident and gave extra practice instead of moving to a new topic" },
+      // — Needs improvement —
+      { text: "Tutor did not review the previous session's code", unchecks: ["code-0"] },
+      {
+        text: "Technical terms were used without explanation — the student nodded along",
+        unchecks: ["code-4"],
+      },
+      { text: "Tutor pasted finished code instead of typing it out", unchecks: ["code-7"] },
+      { text: "Code font was too small to read clearly on screen", unchecks: ["code-8"] },
+      {
+        text: "Tutor coded for the whole session — the student only watched",
+        unchecks: ["code-10", "code-13"],
+      },
+      { text: "No exercise was given after the demonstration", unchecks: ["code-11"] },
+      {
+        text: "Session ran as a one-way lecture — long explanation with no hands-on time",
+        unchecks: ["code-10", "code-14"],
+      },
+      {
+        text: "Tutor took over the student's screen or keyboard to fix the error",
+        unchecks: ["code-18"],
+      },
+      { text: "Tutor fixed the bug without explaining what caused it", unchecks: ["code-17"] },
+      {
+        text: "Understanding was checked only verbally ('do you understand?')",
+        unchecks: ["code-20", "code-21"],
+      },
+      {
+        text: "Tutor summarized the lesson instead of asking the student to",
+        unchecks: ["code-22"],
+      },
+      { text: "No practice work was assigned before the next session", unchecks: ["code-24"] },
     ],
   },
   recommendations: {
@@ -535,7 +696,7 @@ const OBSERVATIONS = {
         text: "Ensure the tutor's camera is on to maintain visibility and engagement",
       },
       {
-        text: "Use visual aids (slides, diagrams, or a document camera) to enhance understanding",
+        text: "Use a shared visual surface — annotation on the lesson material, whiteboard, document camera, or paper to the camera — with clear, labeled drawing",
       },
       {
         text: "Ask which chapter the student is currently studying in school, so you can match or move faster",
@@ -553,6 +714,30 @@ const OBSERVATIONS = {
         text: "Request remote control / student control when needed to navigate the screen efficiently",
       },
       { text: "The tutor must summarize the topic" },
+      // — added —
+      {
+        text: "Demonstrate one problem, then hand the next to the student, rather than explaining continuously",
+      },
+      {
+        text: "Have the student work on paper and show it to the camera so the method is visible, not only the answer",
+      },
+      { text: "Hand the annotation tool to the student instead of doing all the drawing" },
+      {
+        text: "Ask the student to read the question aloud before answering — several errors come from misreading",
+      },
+      {
+        text: "Remain for the full scheduled session and use the remaining time for supported practice",
+      },
+      {
+        text: "Break words at syllable boundaries, not by letter count, so each chunk contains a vowel",
+      },
+      {
+        text: "Use the student's school reading book as the session text, previewing difficult words first",
+      },
+      { text: "Ask the student to explain WHY the answer works, not only how to find it" },
+      {
+        text: "Raise a missed session privately rather than in front of the group",
+      },
     ],
   },
 };
@@ -574,6 +759,137 @@ const TEACHING_QUALITY = [
   { id: "tq5", text: "Is the tutor a good fit for this student?" },
 ];
 
+/* ---------------- Scoring ----------------
+ * Three components, 100 points total, plus a small excellence bonus.
+ * Not scored: technical issues, parent comments, student lateness — recorded
+ * but not the tutor's fault. Tutor lateness IS scored (conduct).
+ */
+const SCORE_WEIGHTS = { checklist: 55, quality: 30, conduct: 15 };
+const CONDUCT_PENALTY = 3;
+const TUTOR_LATE_PENALTY = 5;
+const EXCELLENT_BONUS = 1;
+const MAX_BONUS = 5;
+
+const SCORE_BANDS = [
+  { min: 90, label: "Excellent", color: "#15803d" },
+  { min: 80, label: "Strong", color: "#059669" },
+  { min: 70, label: "Meets expectations", color: "#0891b2" },
+  { min: 60, label: "Needs improvement", color: "#d97706" },
+  { min: 0, label: "Requires follow-up", color: "#b91c1c" },
+];
+
+function computeScore({ stats, quality, selectedObservations }) {
+  const checklistPct = stats.totalItems ? stats.totalDone / stats.totalItems : 0;
+  const checklistPoints = checklistPct * SCORE_WEIGHTS.checklist;
+
+  const answered = TEACHING_QUALITY.filter(
+    (q) => quality[q.id]?.answer === "yes" || quality[q.id]?.answer === "no",
+  );
+  const yesCount = answered.filter((q) => quality[q.id].answer === "yes").length;
+  const qualityPct = answered.length ? yesCount / answered.length : 0;
+  const qualityPoints = qualityPct * SCORE_WEIGHTS.quality;
+
+  const improvements = selectedObservations.filter(
+    (o) => o.category === "improvements",
+  ).length;
+  const tutorLate = selectedObservations.some((o) => o.tutorLate);
+
+  let conductPoints = SCORE_WEIGHTS.conduct - improvements * CONDUCT_PENALTY;
+  if (tutorLate) conductPoints -= TUTOR_LATE_PENALTY;
+  conductPoints = Math.max(0, conductPoints);
+
+  const excellentCount = selectedObservations.filter(
+    (o) => o.category === "excellent",
+  ).length;
+  const bonus = Math.min(MAX_BONUS, excellentCount * EXCELLENT_BONUS);
+
+  const total = Math.max(
+    0,
+    Math.min(100, Math.round(checklistPoints + qualityPoints + conductPoints + bonus)),
+  );
+  const band = SCORE_BANDS.find((b) => total >= b.min);
+
+  return {
+    total,
+    band,
+    unanswered: TEACHING_QUALITY.length - answered.length,
+    breakdown: [
+      {
+        label: "Checklist completion",
+        got: Math.round(checklistPoints),
+        max: SCORE_WEIGHTS.checklist,
+        detail: `${stats.totalDone}/${stats.totalItems} items`,
+      },
+      {
+        label: "Teaching quality",
+        got: Math.round(qualityPoints),
+        max: SCORE_WEIGHTS.quality,
+        detail: answered.length
+          ? `${yesCount}/${answered.length} answered yes`
+          : "not answered",
+      },
+      {
+        label: "Session conduct",
+        got: conductPoints,
+        max: SCORE_WEIGHTS.conduct,
+        detail:
+          improvements || tutorLate
+            ? `${improvements} improvement item${improvements === 1 ? "" : "s"}${
+                tutorLate ? " + tutor lateness" : ""
+              }`
+            : "no issues noted",
+      },
+      {
+        label: "Excellence bonus",
+        got: bonus,
+        max: MAX_BONUS,
+        detail: `${excellentCount} excellent item${excellentCount === 1 ? "" : "s"}`,
+      },
+    ],
+  };
+}
+
+function buildTutorFeedback({ score, selectedObservations, studentName }) {
+  const pick = (cat) =>
+    selectedObservations.filter((o) => o.category === cat).map((o) => o.text);
+
+  const wentWell = [
+    ...pick("excellent"),
+    ...pick("strengths"),
+    ...pick("coding1"),
+    ...pick("coding"),
+  ].filter((t, i, arr) => arr.indexOf(t) === i);
+  const toImprove = pick("improvements");
+  const nextSteps = pick("recommendations");
+
+  const lines = [];
+  lines.push(
+    `Session review${studentName ? ` — ${studentName}` : ""} · Score: ${score.total}/100 (${score.band.label})`,
+  );
+  lines.push("");
+
+  if (wentWell.length) {
+    lines.push("What went well");
+    wentWell.slice(0, 6).forEach((t) => lines.push(`- ${t}`));
+    lines.push("");
+  }
+  if (toImprove.length) {
+    lines.push("What to improve");
+    toImprove.slice(0, 5).forEach((t) => lines.push(`- ${t}`));
+    lines.push("");
+  }
+  if (nextSteps.length) {
+    lines.push("Focus for the next session");
+    nextSteps.slice(0, 4).forEach((t) => lines.push(`- ${t}`));
+    lines.push("");
+  }
+  if (!wentWell.length && !toImprove.length && !nextSteps.length) {
+    lines.push("Select observations from the library to draft feedback.");
+  }
+
+  return lines.join("\n").trim();
+}
+
 const buildInitialQuality = () => {
   const state = {};
   TEACHING_QUALITY.forEach((q) => {
@@ -584,7 +900,7 @@ const buildInitialQuality = () => {
 
 const buildInitialState = (value = false) => {
   const state = {};
-  [...SECTIONS, GROUP_SECTION].forEach((sec) => {
+  [...SECTIONS, GROUP_SECTION, CODING_SECTION].forEach((sec) => {
     sec.items.forEach((_, idx) => {
       state[`${sec.id}-${idx}`] = value;
     });
@@ -610,9 +926,11 @@ export default function VideoReviewChecklist({
   const [notes, setNotes] = useState("");
   const [issuesSeen, setIssuesSeen] = useState("");
   const [recommendation, setRecommendation] = useState("");
+  const [tutorFeedback, setTutorFeedback] = useState("");
   const [selectedObservations, setSelectedObservations] = useState([]);
   const [activeCategory, setActiveCategory] = useState("strengths");
   const [isGroupSession, setIsGroupSession] = useState(false);
+  const [isCodingSession, setIsCodingSession] = useState(false);
   const [rootDirHandle, setRootDirHandle] = useState(null);
   const [rootDirName, setRootDirName] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -673,11 +991,13 @@ export default function VideoReviewChecklist({
     setNotes("");
     setIssuesSeen("");
     setRecommendation("");
+    setTutorFeedback("");
     setTutorName("");
     setStudentName("");
     setReviewer("");
     setReviewDate(new Date().toISOString().slice(0, 10));
     setIsGroupSession(false);
+    setIsCodingSession(false);
     setSaveResult(null);
   };
 
@@ -692,7 +1012,12 @@ export default function VideoReviewChecklist({
       return;
     setSelectedObservations((p) => [
       ...p,
-      { category, text: item.text, unchecks: item.unchecks || [] },
+      {
+        category,
+        text: item.text,
+        unchecks: item.unchecks || [],
+        ...(item.tutorLate ? { tutorLate: true } : {}),
+      },
     ]);
     setNotes((p) => (p.trim() ? `${p}\n${line}` : line));
     if (item.unchecks && item.unchecks.length) {
@@ -719,10 +1044,12 @@ export default function VideoReviewChecklist({
     return `${monthName} ${String(m).padStart(2, "0")}_${String(d).padStart(2, "0")}_${y}`;
   }, [reviewDate]);
 
-  const activeSections = useMemo(
-    () => (isGroupSession ? [...SECTIONS, GROUP_SECTION] : SECTIONS),
-    [isGroupSession],
-  );
+  const activeSections = useMemo(() => {
+    const list = [...SECTIONS];
+    if (isGroupSession) list.push(GROUP_SECTION);
+    if (isCodingSession) list.push(CODING_SECTION);
+    return list;
+  }, [isGroupSession, isCodingSession]);
 
   const stats = useMemo(() => {
     const perSection = {};
@@ -749,6 +1076,24 @@ export default function VideoReviewChecklist({
       overallPct: Math.round((totalDone / totalItems) * 100),
     };
   }, [checked, activeSections]);
+
+  const score = useMemo(
+    () => computeScore({ stats, quality, selectedObservations }),
+    [stats, quality, selectedObservations],
+  );
+
+  const draftFeedback = () =>
+    setTutorFeedback(buildTutorFeedback({ score, selectedObservations, studentName }));
+
+  const copyFeedback = async () => {
+    try {
+      await navigator.clipboard.writeText(tutorFeedback);
+      setSaveResult({ type: "success", message: "✓ Feedback copied" });
+      setTimeout(() => setSaveResult(null), 2000);
+    } catch {
+      setSaveResult({ type: "error", message: "Copy failed — select and copy manually" });
+    }
+  };
 
   /* ---------- Save to server ---------- */
   const saveToServer = async () => {
@@ -777,7 +1122,14 @@ export default function VideoReviewChecklist({
       notes: notes.trim(),
       issuesSeen: issuesSeen.trim(),
       recommendation: recommendation.trim(),
+      tutorFeedback: tutorFeedback.trim(),
       isGroupSession,
+      isCodingSession,
+      score: {
+        total: score.total,
+        band: score.band.label,
+        breakdown: score.breakdown,
+      },
       stats: {
         totalDone: stats.totalDone,
         totalItems: stats.totalItems,
@@ -823,7 +1175,9 @@ export default function VideoReviewChecklist({
     setNotes(p.notes || "");
     setIssuesSeen(p.issuesSeen || "");
     setRecommendation(p.recommendation || "");
+    setTutorFeedback(p.tutorFeedback || "");
     setIsGroupSession(!!p.isGroupSession);
+    setIsCodingSession(!!p.isCodingSession);
     setTutorName(review.tutorName || "");
     setStudentName(review.studentName || "");
     setReviewer(review.reviewer || "");
@@ -947,6 +1301,40 @@ export default function VideoReviewChecklist({
     );
     if (isGroupSession)
       children.push(labelValue("Session type", "Group / Coding Session"));
+    if (isCodingSession)
+      children.push(labelValue("Session type", "1-on-1 Coding Session"));
+
+    // Score block
+    children.push(heading("Session Score", HeadingLevel.HEADING_1));
+    children.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: `${score.total}/100`,
+            bold: true,
+            size: 36,
+            color: score.band.color.replace("#", ""),
+          }),
+          new TextRun({
+            text: `  —  ${score.band.label}`,
+            bold: true,
+            color: score.band.color.replace("#", ""),
+          }),
+        ],
+        spacing: { after: 100 },
+      }),
+    );
+    score.breakdown.forEach((b) =>
+      children.push(plainLine(`   ${b.label}: ${b.got}/${b.max}  (${b.detail})`)),
+    );
+    if (score.unanswered > 0) {
+      children.push(
+        plainLine(
+          `   Note: ${score.unanswered} teaching-quality question(s) unanswered — score is provisional.`,
+          { color: "92400e" },
+        ),
+      );
+    }
 
     // Teaching Quality Assessment block
     const answeredQ = TEACHING_QUALITY.filter((q) => quality[q.id]?.answer);
@@ -1045,6 +1433,14 @@ export default function VideoReviewChecklist({
         .forEach((line) => children.push(plainLine(line)));
     }
 
+    if (tutorFeedback.trim()) {
+      children.push(heading("📨 Feedback for the Tutor", HeadingLevel.HEADING_1));
+      tutorFeedback
+        .trim()
+        .split("\n")
+        .forEach((line) => children.push(plainLine(line)));
+    }
+
     const doc = new Document({
       creator: reviewer || "Evangadi Tutor Review",
       title: `Video Review – ${studentName || "Student"}`,
@@ -1106,6 +1502,75 @@ export default function VideoReviewChecklist({
   };
 
   const activeObs = OBSERVATIONS[activeCategory];
+
+  const sessionToggle = ({
+    on,
+    setOn,
+    icon,
+    title,
+    hint,
+    bgOn,
+    borderOn,
+    textOn,
+    knobOn,
+  }) => (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        marginTop: 14,
+        padding: "12px 16px",
+        borderRadius: 12,
+        background: on ? bgOn : "#f8fafc",
+        border: `1.5px solid ${on ? borderOn : "#e2e8f0"}`,
+        flexWrap: "wrap",
+      }}
+    >
+      <span style={{ fontSize: 20 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div
+          style={{
+            fontSize: 13.5,
+            fontWeight: 800,
+            color: on ? textOn : "#0f172a",
+          }}
+        >
+          {title}
+        </div>
+        <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>{hint}</div>
+      </div>
+      <button
+        type="button"
+        onClick={() => setOn((v) => !v)}
+        style={{
+          width: 48,
+          height: 26,
+          borderRadius: 999,
+          border: "none",
+          cursor: "pointer",
+          background: on ? knobOn : "#cbd5e1",
+          position: "relative",
+          transition: "background 200ms ease",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 3,
+            left: on ? 25 : 3,
+            width: 20,
+            height: 20,
+            borderRadius: 999,
+            background: "#fff",
+            transition: "left 200ms ease",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+          }}
+        />
+      </button>
+    </div>
+  );
 
   return (
     <div
@@ -1264,6 +1729,12 @@ export default function VideoReviewChecklist({
                       </div>
                       <div style={styles.pastInfo}>
                         Tutor: <strong>{r.tutorName}</strong>
+                        {r.payload?.score?.total != null && (
+                          <span style={styles.pastScore}>
+                            {" "}
+                            · {r.payload.score.total}/100
+                          </span>
+                        )}
                         {r.payload?.stats?.overallPct != null && (
                           <span style={styles.pastScore}>
                             · {r.payload.stats.totalDone}/
@@ -1356,65 +1827,30 @@ export default function VideoReviewChecklist({
             </div>
 
             {/* Group / Coding session toggle */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                marginTop: 14,
-                padding: "12px 16px",
-                borderRadius: 12,
-                background: isGroupSession ? "#fdf4ff" : "#f8fafc",
-                border: `1.5px solid ${isGroupSession ? "#e879f9" : "#e2e8f0"}`,
-                flexWrap: "wrap",
-              }}
-            >
-              <span style={{ fontSize: 20 }}>👩‍💻</span>
-              <div style={{ flex: 1, minWidth: 180 }}>
-                <div
-                  style={{
-                    fontSize: 13.5,
-                    fontWeight: 800,
-                    color: isGroupSession ? "#a21caf" : "#0f172a",
-                  }}
-                >
-                  Group / Coding Session
-                </div>
-                <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>
-                  Adds a checklist for participation, balanced praise &amp;
-                  collaboration — and the "Group Coding" observation library
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsGroupSession((v) => !v)}
-                style={{
-                  width: 48,
-                  height: 26,
-                  borderRadius: 999,
-                  border: "none",
-                  cursor: "pointer",
-                  background: isGroupSession ? "#c026d3" : "#cbd5e1",
-                  position: "relative",
-                  transition: "background 200ms ease",
-                  flexShrink: 0,
-                }}
-              >
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    left: isGroupSession ? 25 : 3,
-                    width: 20,
-                    height: 20,
-                    borderRadius: 999,
-                    background: "#fff",
-                    transition: "left 200ms ease",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-                  }}
-                />
-              </button>
-            </div>
+            {sessionToggle({
+              on: isGroupSession,
+              setOn: setIsGroupSession,
+              icon: "👩‍💻",
+              title: "Group / Coding Session",
+              hint: 'Adds a checklist for participation, balanced praise & collaboration — and the "Group Coding" observation library',
+              bgOn: "#fdf4ff",
+              borderOn: "#e879f9",
+              textOn: "#a21caf",
+              knobOn: "#c026d3",
+            })}
+
+            {/* 1-on-1 Coding session toggle */}
+            {sessionToggle({
+              on: isCodingSession,
+              setOn: setIsCodingSession,
+              icon: "💻",
+              title: "1-on-1 Coding Session",
+              hint: "Adds a checklist for concept, live coding, hands-on practice, debugging and closing — and the \"1-on-1 Coding\" observation library",
+              bgOn: "#f0fdfa",
+              borderOn: "#5eead4",
+              textOn: "#0f766e",
+              knobOn: "#0d9488",
+            })}
 
             <div
               style={{
@@ -1520,6 +1956,53 @@ export default function VideoReviewChecklist({
                   }}
                 >
                   {saveResult.message}
+                </div>
+              )}
+            </div>
+
+            {/* Session score */}
+            <div style={styles.scoreBox}>
+              <div style={styles.scoreTop}>
+                <div>
+                  <div style={styles.scoreLabel}>Session score</div>
+                  <div style={{ ...styles.scoreBand, color: score.band.color }}>
+                    {score.band.label}
+                  </div>
+                </div>
+                <div style={{ ...styles.scoreNumber, color: score.band.color }}>
+                  {score.total}
+                  <span style={styles.scoreOutOf}>/100</span>
+                </div>
+              </div>
+              <div style={styles.scoreRows}>
+                {score.breakdown.map((b) => (
+                  <div
+                    key={b.label}
+                    style={{
+                      ...styles.scoreRow,
+                      flexWrap: isMobile ? "wrap" : "nowrap",
+                    }}
+                  >
+                    <span
+                      style={{
+                        ...styles.scoreRowLabel,
+                        minWidth: isMobile ? "auto" : styles.scoreRowLabel.minWidth,
+                      }}
+                    >
+                      {b.label}
+                    </span>
+                    <span style={styles.scoreRowDetail}>{b.detail}</span>
+                    <span style={styles.scoreRowPoints}>
+                      {b.got}/{b.max}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {score.unanswered > 0 && (
+                <div style={styles.scoreWarn}>
+                  {score.unanswered} teaching-quality question
+                  {score.unanswered === 1 ? "" : "s"} not answered — the score is
+                  provisional until all are marked.
                 </div>
               )}
             </div>
@@ -1823,6 +2306,60 @@ export default function VideoReviewChecklist({
               }}
             >
               {recommendation.length} characters
+            </div>
+          </section>
+
+          {/* Feedback for the Tutor */}
+          <section
+            style={{ ...styles.notesSection, borderTop: "2px solid #bbf7d0" }}
+          >
+            <h2 style={{ ...styles.notesTitle, color: "#15803d" }}>
+              📨 Feedback for the Tutor
+            </h2>
+            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#64748b" }}>
+              This is what the tutor receives. Draft it from your selected
+              observations, then edit the wording before sending.
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <button type="button" onClick={draftFeedback} style={styles.btn}>
+                ✍️ Draft from observations
+              </button>
+              <button
+                type="button"
+                onClick={copyFeedback}
+                style={styles.btn}
+                disabled={!tutorFeedback.trim()}
+              >
+                📋 Copy
+              </button>
+            </div>
+            <textarea
+              value={tutorFeedback}
+              onChange={(e) => setTutorFeedback(e.target.value)}
+              placeholder={`What went well\n- ...\n\nWhat to improve\n- ...\n\nFocus for the next session\n- ...`}
+              style={{
+                ...styles.textarea,
+                borderColor: "#bbf7d0",
+                minHeight: 220,
+                lineHeight: 1.7,
+              }}
+            />
+            <div
+              style={{
+                fontSize: 11,
+                color: "#94a3b8",
+                textAlign: "right",
+                marginTop: 4,
+              }}
+            >
+              {tutorFeedback.length} characters
             </div>
           </section>
 
@@ -2172,6 +2709,63 @@ const styles = {
     background: "#fef2f2",
     color: "#b91c1c",
     border: "1px solid #fecaca",
+  },
+
+  // Session score
+  scoreBox: {
+    marginTop: 16,
+    padding: 18,
+    borderRadius: 14,
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+  },
+  scoreTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 14,
+  },
+  scoreLabel: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#64748b",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+  },
+  scoreBand: { fontSize: 15, fontWeight: 800, marginTop: 4 },
+  scoreNumber: {
+    fontSize: 44,
+    fontWeight: 800,
+    lineHeight: 1,
+    letterSpacing: "-0.03em",
+  },
+  scoreOutOf: {
+    fontSize: 16,
+    fontWeight: 600,
+    color: "#94a3b8",
+    marginLeft: 2,
+  },
+  scoreRows: { display: "flex", flexDirection: "column", gap: 6 },
+  scoreRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "7px 10px",
+    background: "#f8fafc",
+    borderRadius: 8,
+    fontSize: 12.5,
+  },
+  scoreRowLabel: { fontWeight: 700, color: "#0f172a", minWidth: 150 },
+  scoreRowDetail: { color: "#64748b", flex: 1 },
+  scoreRowPoints: { fontWeight: 800, color: "#0f172a" },
+  scoreWarn: {
+    marginTop: 10,
+    padding: "8px 12px",
+    borderRadius: 8,
+    background: "#fffbeb",
+    border: "1px solid #fde68a",
+    color: "#92400e",
+    fontSize: 12,
   },
 
   selectedSection: {
