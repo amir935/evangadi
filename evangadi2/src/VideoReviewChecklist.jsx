@@ -105,14 +105,19 @@ const GROUP_SECTION = {
   ],
 };
 
-// Extra section shown ONLY for 1-on-1 coding sessions.
-// Ordered the way the session runs: open → concept → demo → practice →
-// debugging → checking understanding → close.
+// Used for 1-on-1 CODING sessions. This one REPLACES the standard sections —
+// a coding review has no notebook, no document camera, no workbook — so it
+// carries its own setup and closing items and stands alone.
 const CODING_SECTION = {
   id: "code",
   title: "1-on-1 Coding Session",
   accent: "#0d9488",
   items: [
+    // Setup & professionalism
+    "Joined the session on time",
+    "Greeted the student by name",
+    "Maintained stable audio/video and a quiet, professional background",
+    "Confirmed the student could see the shared screen and editor clearly",
     // Opening
     "Reviewed the previous session's code and checked what the student retained",
     "Stated what the session would build or cover",
@@ -616,36 +621,41 @@ const OBSERVATIONS = {
       { text: "Adjusted the pace to this student rather than following a fixed plan" },
       { text: "Checked whether the student felt confident and gave extra practice instead of moving to a new topic" },
       // — Needs improvement —
-      { text: "Tutor did not review the previous session's code", unchecks: ["code-0"] },
+      { text: "Tutor did not review the previous session's code", unchecks: ["code-4"] },
       {
         text: "Technical terms were used without explanation — the student nodded along",
-        unchecks: ["code-4"],
+        unchecks: ["code-8"],
       },
-      { text: "Tutor pasted finished code instead of typing it out", unchecks: ["code-7"] },
-      { text: "Code font was too small to read clearly on screen", unchecks: ["code-8"] },
+      { text: "Tutor pasted finished code instead of typing it out", unchecks: ["code-11"] },
+      { text: "Code font was too small to read clearly on screen", unchecks: ["code-12"] },
       {
         text: "Tutor coded for the whole session — the student only watched",
-        unchecks: ["code-10", "code-13"],
+        unchecks: ["code-14", "code-17"],
       },
-      { text: "No exercise was given after the demonstration", unchecks: ["code-11"] },
+      { text: "No exercise was given after the demonstration", unchecks: ["code-15"] },
       {
         text: "Session ran as a one-way lecture — long explanation with no hands-on time",
-        unchecks: ["code-10", "code-14"],
+        unchecks: ["code-14", "code-18"],
       },
       {
         text: "Tutor took over the student's screen or keyboard to fix the error",
-        unchecks: ["code-18"],
+        unchecks: ["code-22"],
       },
-      { text: "Tutor fixed the bug without explaining what caused it", unchecks: ["code-17"] },
+      { text: "Tutor fixed the bug without explaining what caused it", unchecks: ["code-21"] },
       {
         text: "Understanding was checked only verbally ('do you understand?')",
-        unchecks: ["code-20", "code-21"],
+        unchecks: ["code-24", "code-25"],
       },
       {
         text: "Tutor summarized the lesson instead of asking the student to",
-        unchecks: ["code-22"],
+        unchecks: ["code-26"],
       },
-      { text: "No practice work was assigned before the next session", unchecks: ["code-24"] },
+      { text: "No practice work was assigned before the next session", unchecks: ["code-28"] },
+      {
+        text: "Tutor joined the coding session late",
+        unchecks: ["code-0"],
+        tutorLate: true,
+      },
     ],
   },
   recommendations: {
@@ -929,8 +939,12 @@ export default function VideoReviewChecklist({
   const [tutorFeedback, setTutorFeedback] = useState("");
   const [selectedObservations, setSelectedObservations] = useState([]);
   const [activeCategory, setActiveCategory] = useState("strengths");
-  const [isGroupSession, setIsGroupSession] = useState(false);
-  const [isCodingSession, setIsCodingSession] = useState(false);
+  // "standard" = any non-coding subject | "group" = group coding class
+  // | "coding1" = 1-on-1 coding (its own checklist, not the standard one)
+  const [sessionType, setSessionType] = useState("standard");
+  // Which panels are expanded. Everything starts collapsed except the first
+  // section, so the page opens short and the reviewer opens one phase at a time.
+  const [openSections, setOpenSections] = useState({ start: true });
   const [rootDirHandle, setRootDirHandle] = useState(null);
   const [rootDirName, setRootDirName] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -996,8 +1010,8 @@ export default function VideoReviewChecklist({
     setStudentName("");
     setReviewer("");
     setReviewDate(new Date().toISOString().slice(0, 10));
-    setIsGroupSession(false);
-    setIsCodingSession(false);
+    setSessionType("standard");
+    setOpenSections({ start: true });
     setSaveResult(null);
   };
 
@@ -1045,11 +1059,34 @@ export default function VideoReviewChecklist({
   }, [reviewDate]);
 
   const activeSections = useMemo(() => {
-    const list = [...SECTIONS];
-    if (isGroupSession) list.push(GROUP_SECTION);
-    if (isCodingSession) list.push(CODING_SECTION);
-    return list;
-  }, [isGroupSession, isCodingSession]);
+    // A 1-on-1 coding review uses ONLY the coding checklist — the standard
+    // items (notebook, document camera, workbook) don't apply to it.
+    if (sessionType === "coding1") return [CODING_SECTION];
+    if (sessionType === "group") return [...SECTIONS, GROUP_SECTION];
+    return SECTIONS;
+  }, [sessionType]);
+
+  // Observation tabs that make sense for this session type
+  const visibleCategories = useMemo(
+    () =>
+      Object.keys(OBSERVATIONS).filter((c) => {
+        if (c === "coding") return sessionType === "group";
+        if (c === "coding1") return sessionType === "coding1";
+        return true;
+      }),
+    [sessionType],
+  );
+
+  // If the active tab is hidden by a session-type change, fall back
+  useEffect(() => {
+    if (!visibleCategories.includes(activeCategory))
+      setActiveCategory("strengths");
+  }, [visibleCategories, activeCategory]);
+
+  // Open the first section of whichever checklist is active
+  useEffect(() => {
+    setOpenSections((p) => ({ ...p, [activeSections[0].id]: true }));
+  }, [activeSections]);
 
   const stats = useMemo(() => {
     const perSection = {};
@@ -1081,6 +1118,17 @@ export default function VideoReviewChecklist({
     () => computeScore({ stats, quality, selectedObservations }),
     [stats, quality, selectedObservations],
   );
+
+  const toggleSection = (id) =>
+    setOpenSections((p) => ({ ...p, [id]: !p[id] }));
+  const expandAll = () => {
+    const all = { quality: true, notes: true, issues: true, recommend: true, feedback: true };
+    activeSections.forEach((sec) => {
+      all[sec.id] = true;
+    });
+    setOpenSections(all);
+  };
+  const collapseAll = () => setOpenSections({});
 
   const draftFeedback = () =>
     setTutorFeedback(buildTutorFeedback({ score, selectedObservations, studentName }));
@@ -1123,8 +1171,10 @@ export default function VideoReviewChecklist({
       issuesSeen: issuesSeen.trim(),
       recommendation: recommendation.trim(),
       tutorFeedback: tutorFeedback.trim(),
-      isGroupSession,
-      isCodingSession,
+      sessionType,
+      // kept for older readers of the payload
+      isGroupSession: sessionType === "group",
+      isCodingSession: sessionType === "coding1",
       score: {
         total: score.total,
         band: score.band.label,
@@ -1176,8 +1226,10 @@ export default function VideoReviewChecklist({
     setIssuesSeen(p.issuesSeen || "");
     setRecommendation(p.recommendation || "");
     setTutorFeedback(p.tutorFeedback || "");
-    setIsGroupSession(!!p.isGroupSession);
-    setIsCodingSession(!!p.isCodingSession);
+    setSessionType(
+      p.sessionType ||
+        (p.isCodingSession ? "coding1" : p.isGroupSession ? "group" : "standard"),
+    );
     setTutorName(review.tutorName || "");
     setStudentName(review.studentName || "");
     setReviewer(review.reviewer || "");
@@ -1299,10 +1351,12 @@ export default function VideoReviewChecklist({
         `${stats.totalDone}/${stats.totalItems} (${stats.overallPct}%)`,
       ),
     );
-    if (isGroupSession)
-      children.push(labelValue("Session type", "Group / Coding Session"));
-    if (isCodingSession)
-      children.push(labelValue("Session type", "1-on-1 Coding Session"));
+    children.push(
+      labelValue(
+        "Session type",
+        SESSION_TYPES.find((t) => t.id === sessionType)?.label || sessionType,
+      ),
+    );
 
     // Score block
     children.push(heading("Session Score", HeadingLevel.HEADING_1));
@@ -1503,73 +1557,104 @@ export default function VideoReviewChecklist({
 
   const activeObs = OBSERVATIONS[activeCategory];
 
-  const sessionToggle = ({
-    on,
-    setOn,
-    icon,
-    title,
-    hint,
-    bgOn,
-    borderOn,
-    textOn,
-    knobOn,
-  }) => (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        marginTop: 14,
-        padding: "12px 16px",
-        borderRadius: 12,
-        background: on ? bgOn : "#f8fafc",
-        border: `1.5px solid ${on ? borderOn : "#e2e8f0"}`,
-        flexWrap: "wrap",
-      }}
-    >
-      <span style={{ fontSize: 20 }}>{icon}</span>
-      <div style={{ flex: 1, minWidth: 180 }}>
+  const SESSION_TYPES = [
+    {
+      id: "standard",
+      icon: "📘",
+      label: "Standard subject",
+      hint: "Math, reading, science — the standard three-phase checklist",
+      color: "#2563eb",
+      bg: "#eff6ff",
+    },
+    {
+      id: "group",
+      icon: "👩‍💻",
+      label: "Group coding",
+      hint: "Standard checklist plus participation, balanced praise & collaboration",
+      color: "#c026d3",
+      bg: "#fdf4ff",
+    },
+    {
+      id: "coding1",
+      icon: "💻",
+      label: "1-on-1 coding",
+      hint: "Its own checklist — concept, live coding, practice, debugging, close",
+      color: "#0d9488",
+      bg: "#f0fdfa",
+    },
+  ];
+
+  const sessionTypePicker = () => {
+    const active = SESSION_TYPES.find((t) => t.id === sessionType);
+    return (
+      <div style={{ marginTop: 14 }}>
+        <div style={styles.metaLabelText}>Session type</div>
         <div
           style={{
-            fontSize: 13.5,
-            fontWeight: 800,
-            color: on ? textOn : "#0f172a",
+            display: "flex",
+            gap: 8,
+            marginTop: 8,
+            flexWrap: "wrap",
           }}
         >
-          {title}
+          {SESSION_TYPES.map((t) => {
+            const on = sessionType === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSessionType(t.id)}
+                style={{
+                  ...styles.typeBtn,
+                  background: on ? t.bg : "#ffffff",
+                  borderColor: on ? t.color : "#e2e8f0",
+                  color: on ? t.color : "#475569",
+                  fontWeight: on ? 800 : 600,
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                {t.label}
+              </button>
+            );
+          })}
         </div>
-        <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>{hint}</div>
+        <div style={styles.typeHint}>{active.hint}</div>
       </div>
+    );
+  };
+
+  // Collapsible wrapper for the long free-text panels at the bottom.
+  const panel = ({ id, title, color, borderTop, hint, filled, children }) => (
+    <section style={{ ...styles.notesSection, borderTop }}>
       <button
         type="button"
-        onClick={() => setOn((v) => !v)}
-        style={{
-          width: 48,
-          height: 26,
-          borderRadius: 999,
-          border: "none",
-          cursor: "pointer",
-          background: on ? knobOn : "#cbd5e1",
-          position: "relative",
-          transition: "background 200ms ease",
-          flexShrink: 0,
-        }}
+        onClick={() => toggleSection(id)}
+        aria-expanded={!!openSections[id]}
+        style={styles.panelHeaderBtn}
       >
+        <span style={{ ...styles.notesTitle, margin: 0, color }}>{title}</span>
+        {filled > 0 && <span style={styles.panelFilled}>{filled} chars</span>}
         <span
           style={{
-            position: "absolute",
-            top: 3,
-            left: on ? 25 : 3,
-            width: 20,
-            height: 20,
-            borderRadius: 999,
-            background: "#fff",
-            transition: "left 200ms ease",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+            ...styles.chevron,
+            marginLeft: filled > 0 ? 0 : "auto",
+            transform: openSections[id] ? "rotate(90deg)" : "rotate(0deg)",
           }}
-        />
+        >
+          ›
+        </span>
       </button>
-    </div>
+      {openSections[id] && (
+        <div style={{ marginTop: 12 }}>
+          {hint && (
+            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#64748b" }}>
+              {hint}
+            </p>
+          )}
+          {children}
+        </div>
+      )}
+    </section>
   );
 
   return (
@@ -1611,7 +1696,7 @@ export default function VideoReviewChecklist({
               </div>
             </div>
             <div style={styles.tabs}>
-              {Object.keys(OBSERVATIONS).map((catId) => {
+              {visibleCategories.map((catId) => {
                 const cat = OBSERVATIONS[catId];
                 const isActive = activeCategory === catId;
                 return (
@@ -1826,31 +1911,7 @@ export default function VideoReviewChecklist({
               </label>
             </div>
 
-            {/* Group / Coding session toggle */}
-            {sessionToggle({
-              on: isGroupSession,
-              setOn: setIsGroupSession,
-              icon: "👩‍💻",
-              title: "Group / Coding Session",
-              hint: 'Adds a checklist for participation, balanced praise & collaboration — and the "Group Coding" observation library',
-              bgOn: "#fdf4ff",
-              borderOn: "#e879f9",
-              textOn: "#a21caf",
-              knobOn: "#c026d3",
-            })}
-
-            {/* 1-on-1 Coding session toggle */}
-            {sessionToggle({
-              on: isCodingSession,
-              setOn: setIsCodingSession,
-              icon: "💻",
-              title: "1-on-1 Coding Session",
-              hint: "Adds a checklist for concept, live coding, hands-on practice, debugging and closing — and the \"1-on-1 Coding\" observation library",
-              bgOn: "#f0fdfa",
-              borderOn: "#5eead4",
-              textOn: "#0f766e",
-              knobOn: "#0d9488",
-            })}
+            {sessionTypePicker()}
 
             <div
               style={{
@@ -1914,6 +1975,12 @@ export default function VideoReviewChecklist({
                 </button>
                 <button style={styles.btn} onClick={clearObservations}>
                   Clear observations
+                </button>
+                <button style={styles.btn} onClick={expandAll}>
+                  ⬇ Expand all
+                </button>
+                <button style={styles.btn} onClick={collapseAll}>
+                  ⬆ Collapse all
                 </button>
                 <button
                   style={{ ...styles.btn, color: "#dc2626", borderColor: "#fca5a5" }}
@@ -2008,6 +2075,55 @@ export default function VideoReviewChecklist({
             </div>
           </header>
 
+          {/* Feedback for the Tutor — sits directly under the score */}
+          {panel({
+            id: "feedback",
+            title: "📨 Feedback for the Tutor",
+            color: "#15803d",
+            borderTop: "2px solid #bbf7d0",
+            filled: tutorFeedback.length,
+            hint: "This is what the tutor receives. Draft it from your selected observations, then edit the wording before sending.",
+            children: (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    marginBottom: 10,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={draftFeedback}
+                    style={styles.btn}
+                  >
+                    ✍️ Draft from observations
+                  </button>
+                  <button
+                    type="button"
+                    onClick={copyFeedback}
+                    style={styles.btn}
+                    disabled={!tutorFeedback.trim()}
+                  >
+                    📋 Copy
+                  </button>
+                </div>
+                <textarea
+                  value={tutorFeedback}
+                  onChange={(e) => setTutorFeedback(e.target.value)}
+                  placeholder={`What went well\n- ...\n\nWhat to improve\n- ...\n\nFocus for the next session\n- ...`}
+                  style={{
+                    ...styles.textarea,
+                    borderColor: "#bbf7d0",
+                    minHeight: 220,
+                    lineHeight: 1.7,
+                  }}
+                />
+              </>
+            ),
+          })}
+
           {selectedObservations.length > 0 && (
             <section style={styles.selectedSection}>
               <div style={styles.selectedHeader}>
@@ -2055,23 +2171,47 @@ export default function VideoReviewChecklist({
           <main style={styles.sections}>
             {/* Teaching Quality Assessment — 5 yes/no/N/A questions */}
             <section style={styles.qualitySection}>
-              <div style={styles.qualityHeader}>
+              <button
+                type="button"
+                onClick={() => toggleSection("quality")}
+                aria-expanded={!!openSections.quality}
+                style={{
+                  ...styles.qualityHeaderBtn,
+                  marginBottom: openSections.quality ? 14 : 0,
+                  paddingBottom: openSections.quality ? 12 : 0,
+                  borderBottom: openSections.quality
+                    ? "1px solid rgba(217,119,6,0.25)"
+                    : "none",
+                }}
+              >
                 <span style={styles.qualityIcon}>🎯</span>
-                <div>
-                  <h2 style={styles.qualityTitle}>
+                <span style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+                  <span style={styles.qualityTitle}>
                     Teaching Quality Assessment
-                  </h2>
-                  <p style={styles.qualitySubtitle}>
+                  </span>
+                  <span style={styles.qualitySubtitle}>
                     Answer these 5 questions about the tutor's teaching
                     effectiveness
-                  </p>
-                </div>
+                  </span>
+                </span>
                 <span style={styles.qualityCount}>
                   {Object.values(quality).filter((q) => q.answer).length} /{" "}
                   {TEACHING_QUALITY.length}
                 </span>
-              </div>
+                <span
+                  style={{
+                    ...styles.chevron,
+                    color: "#92400e",
+                    transform: openSections.quality
+                      ? "rotate(90deg)"
+                      : "rotate(0deg)",
+                  }}
+                >
+                  ›
+                </span>
+              </button>
 
+              {openSections.quality && (
               <ol style={styles.qualityList}>
                 {TEACHING_QUALITY.map((q, idx) => {
                   const ans = quality[q.id] || { answer: null, comment: "" };
@@ -2151,23 +2291,45 @@ export default function VideoReviewChecklist({
                   );
                 })}
               </ol>
+              )}
             </section>
 
             {activeSections.map((sec) => {
               const s = stats.perSection[sec.id];
               return (
                 <section key={sec.id} style={styles.section}>
-                  <div style={styles.sectionHeader}>
-                    <div style={styles.sectionTitleWrap}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(sec.id)}
+                    aria-expanded={!!openSections[sec.id]}
+                    style={styles.sectionHeaderBtn}
+                  >
+                    <span style={styles.sectionTitleWrap}>
                       <span
                         style={{ ...styles.sectionDot, background: sec.accent }}
                       />
-                      <h2 style={styles.sectionTitle}>{sec.title}</h2>
-                    </div>
-                    <span style={styles.sectionCount}>
+                      <span style={styles.sectionTitle}>{sec.title}</span>
+                    </span>
+                    <span
+                      style={{
+                        ...styles.sectionCount,
+                        background: s.done === s.total ? "#dcfce7" : "#f1f5f9",
+                        color: s.done === s.total ? "#15803d" : "#64748b",
+                      }}
+                    >
                       {s.done}/{s.total}
                     </span>
-                  </div>
+                    <span
+                      style={{
+                        ...styles.chevron,
+                        transform: openSections[sec.id]
+                          ? "rotate(90deg)"
+                          : "rotate(0deg)",
+                      }}
+                    >
+                      ›
+                    </span>
+                  </button>
                   <div style={styles.sectionTrack}>
                     <div
                       style={{
@@ -2177,6 +2339,7 @@ export default function VideoReviewChecklist({
                       }}
                     />
                   </div>
+                  {openSections[sec.id] && (
                   <ul style={styles.list}>
                     {sec.items.map((item, idx) => {
                       const key = `${sec.id}-${idx}`;
@@ -2227,141 +2390,71 @@ export default function VideoReviewChecklist({
                       );
                     })}
                   </ul>
+                  )}
                 </section>
               );
             })}
           </main>
 
-          <section style={styles.notesSection}>
-            <h2 style={styles.notesTitle}>Reviewer Notes</h2>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Strengths, areas for improvement, specific timestamps, suggested next steps..."
-              style={styles.textarea}
-            />
-          </section>
+          {panel({
+            id: "notes",
+            title: "Reviewer Notes",
+            filled: notes.length,
+            children: (
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Strengths, areas for improvement, specific timestamps, suggested next steps..."
+                style={styles.textarea}
+              />
+            ),
+          })}
 
           {/* Issues Seen */}
-          <section
-            style={{ ...styles.notesSection, borderTop: "2px solid #fee2e2" }}
-          >
-            <h2 style={{ ...styles.notesTitle, color: "#b91c1c" }}>
-              ⚠️ Issues Seen in This Session
-            </h2>
-            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#64748b" }}>
-              Describe specific issues observed — connection problems, lateness,
-              energy level, behaviour, etc.
-            </p>
-            <textarea
-              value={issuesSeen}
-              onChange={(e) => setIssuesSeen(e.target.value)}
-              placeholder={`e.g.\n1. Internet Connection Issue\nAn audio/internet issue was observed in one of the sessions from the tutor's side.\n\n2. Lateness\nTutor was late on two sessions — approximately 3 min 7 sec late in one session and 5 min 54 sec late in another.\n\n3. Sleepiness / Low Energy\nThis was a recurring pattern across most sessions reviewed...`}
-              style={{
-                ...styles.textarea,
-                borderColor: "#fecaca",
-                minHeight: 200,
-                lineHeight: 1.7,
-              }}
-            />
-            <div
-              style={{
-                fontSize: 11,
-                color: "#94a3b8",
-                textAlign: "right",
-                marginTop: 4,
-              }}
-            >
-              {issuesSeen.length} characters
-            </div>
-          </section>
+          {panel({
+            id: "issues",
+            title: "⚠️ Issues Seen in This Session",
+            color: "#b91c1c",
+            borderTop: "2px solid #fee2e2",
+            filled: issuesSeen.length,
+            hint: "Describe specific issues observed — connection problems, lateness, energy level, behaviour, etc.",
+            children: (
+              <textarea
+                value={issuesSeen}
+                onChange={(e) => setIssuesSeen(e.target.value)}
+                placeholder={`e.g.\n1. Internet Connection Issue\nAn audio/internet issue was observed in one of the sessions from the tutor's side.\n\n2. Lateness\nTutor was late on two sessions — approximately 3 min 7 sec late in one session and 5 min 54 sec late in another.\n\n3. Sleepiness / Low Energy\nThis was a recurring pattern across most sessions reviewed...`}
+                style={{
+                  ...styles.textarea,
+                  borderColor: "#fecaca",
+                  minHeight: 200,
+                  lineHeight: 1.7,
+                }}
+              />
+            ),
+          })}
 
           {/* Recommendation */}
-          <section
-            style={{ ...styles.notesSection, borderTop: "2px solid #bfdbfe" }}
-          >
-            <h2 style={{ ...styles.notesTitle, color: "#1d4ed8" }}>
-              💡 Recommendation
-            </h2>
-            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#64748b" }}>
-              Specific recommendation for this tutor/student going forward.
-            </p>
-            <textarea
-              value={recommendation}
-              onChange={(e) => setRecommendation(e.target.value)}
-              placeholder={`e.g.\nThe current teaching approach appears effective. To further support progress:\n- Additional practice with fraction concepts\n- More step-by-step guidance on challenging problems\n- Encourage tutor to maintain higher energy levels throughout sessions`}
-              style={{
-                ...styles.textarea,
-                borderColor: "#bfdbfe",
-                minHeight: 160,
-                lineHeight: 1.7,
-              }}
-            />
-            <div
-              style={{
-                fontSize: 11,
-                color: "#94a3b8",
-                textAlign: "right",
-                marginTop: 4,
-              }}
-            >
-              {recommendation.length} characters
-            </div>
-          </section>
-
-          {/* Feedback for the Tutor */}
-          <section
-            style={{ ...styles.notesSection, borderTop: "2px solid #bbf7d0" }}
-          >
-            <h2 style={{ ...styles.notesTitle, color: "#15803d" }}>
-              📨 Feedback for the Tutor
-            </h2>
-            <p style={{ margin: "0 0 10px", fontSize: 12.5, color: "#64748b" }}>
-              This is what the tutor receives. Draft it from your selected
-              observations, then edit the wording before sending.
-            </p>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                marginBottom: 10,
-                flexWrap: "wrap",
-              }}
-            >
-              <button type="button" onClick={draftFeedback} style={styles.btn}>
-                ✍️ Draft from observations
-              </button>
-              <button
-                type="button"
-                onClick={copyFeedback}
-                style={styles.btn}
-                disabled={!tutorFeedback.trim()}
-              >
-                📋 Copy
-              </button>
-            </div>
-            <textarea
-              value={tutorFeedback}
-              onChange={(e) => setTutorFeedback(e.target.value)}
-              placeholder={`What went well\n- ...\n\nWhat to improve\n- ...\n\nFocus for the next session\n- ...`}
-              style={{
-                ...styles.textarea,
-                borderColor: "#bbf7d0",
-                minHeight: 220,
-                lineHeight: 1.7,
-              }}
-            />
-            <div
-              style={{
-                fontSize: 11,
-                color: "#94a3b8",
-                textAlign: "right",
-                marginTop: 4,
-              }}
-            >
-              {tutorFeedback.length} characters
-            </div>
-          </section>
+          {panel({
+            id: "recommend",
+            title: "💡 Recommendation",
+            color: "#1d4ed8",
+            borderTop: "2px solid #bfdbfe",
+            filled: recommendation.length,
+            hint: "Specific recommendation for this tutor/student going forward.",
+            children: (
+              <textarea
+                value={recommendation}
+                onChange={(e) => setRecommendation(e.target.value)}
+                placeholder={`e.g.\nThe current teaching approach appears effective. To further support progress:\n- Additional practice with fraction concepts\n- More step-by-step guidance on challenging problems\n- Encourage tutor to maintain higher energy levels throughout sessions`}
+                style={{
+                  ...styles.textarea,
+                  borderColor: "#bfdbfe",
+                  minHeight: 160,
+                  lineHeight: 1.7,
+                }}
+              />
+            ),
+          })}
 
           <footer style={styles.footer}>
             <span>Evangadi Tutor Review · {new Date().getFullYear()}</span>
@@ -2602,6 +2695,19 @@ const styles = {
     color: "#0f172a",
     background: "#ffffff",
   },
+
+  typeBtn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1.5px solid",
+    fontSize: 13,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  typeHint: { marginTop: 8, fontSize: 11.5, color: "#64748b" },
 
   folderHint: {
     marginTop: 16,
@@ -2849,13 +2955,19 @@ const styles = {
   },
   qualityIcon: { fontSize: 22 },
   qualityTitle: {
+    display: "block",
     margin: 0,
     fontSize: 16,
     fontWeight: 800,
     color: "#78350f",
     letterSpacing: "-0.01em",
   },
-  qualitySubtitle: { margin: "2px 0 0", fontSize: 12, color: "#92400e" },
+  qualitySubtitle: {
+    display: "block",
+    margin: "2px 0 0",
+    fontSize: 12,
+    color: "#92400e",
+  },
   qualityCount: {
     marginLeft: "auto",
     fontSize: 12,
@@ -2949,7 +3061,67 @@ const styles = {
     alignItems: "center",
     marginBottom: 10,
   },
-  sectionTitleWrap: { display: "flex", alignItems: "center", gap: 10 },
+  sectionHeaderBtn: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 10,
+    padding: 0,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    textAlign: "left",
+  },
+  qualityHeaderBtn: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: 0,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontFamily: "inherit",
+  },
+  panelHeaderBtn: {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: 0,
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    textAlign: "left",
+  },
+  panelFilled: {
+    marginLeft: "auto",
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#64748b",
+    background: "#f1f5f9",
+    padding: "3px 8px",
+    borderRadius: 999,
+  },
+  chevron: {
+    fontSize: 22,
+    lineHeight: 1,
+    color: "#94a3b8",
+    fontWeight: 700,
+    transition: "transform 160ms ease",
+    display: "inline-block",
+    flexShrink: 0,
+  },
+  sectionTitleWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
   sectionDot: { width: 10, height: 10, borderRadius: 999 },
   sectionTitle: {
     margin: 0,
