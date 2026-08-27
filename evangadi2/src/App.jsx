@@ -4,6 +4,8 @@ import Login from "./Login";
 import WeeklySchedule from "./WeeklySchedule";
 import VideoReviewChecklist from "./VideoReviewChecklist";
 import AdminPanel from "./AdminPanel";
+import AccountMenu from "./AccountMenu";
+import AuditorShell from "./AuditorShell";
 
 const ROLE_BADGE = {
   admin: { label: "Admin", color: "#dc2626", bg: "#fee2e2" },
@@ -58,23 +60,14 @@ function Shell() {
   const hasAnyTab = allowedTabs.length > 0;
   const canSchedule = allowedTabs.some((t) => t.id === "schedule");
   const [activeTab, setActiveTab] = useState(null); // set once we know the role, below
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef(null);
   const [navOpen, setNavOpen] = useState(false);
   const navRef = useRef(null);
   const isMobile = useIsMobile();
-
-  // Close the account dropdown when clicking outside it
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDoc = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [menuOpen]);
+  const reviewRef = useRef(null);
+  const [reviewMeta, setReviewMeta] = useState({
+    tutorName: "",
+    studentName: "",
+  });
 
   // Close the mobile nav dropdown when clicking outside it
   useEffect(() => {
@@ -103,6 +96,25 @@ function Shell() {
     activeTab && allowedTabs.some((t) => t.id === activeTab)
       ? activeTab
       : allowedTabs[0]?.id || null;
+
+  // The redesigned Video Review page ("Auditor Center") owns its own
+  // sidebar + header shell instead of the classic top bar — every other
+  // tab below is untouched.
+  if (hasAnyTab && tab === "review") {
+    return (
+      <AuditorShell
+        allowedTabs={allowedTabs.map((t) => t.id)}
+        onNavigate={setActiveTab}
+        user={user}
+        logout={logout}
+        badge={badge}
+        meta={reviewMeta}
+        onStartNewAudit={() => reviewRef.current?.clearAll()}
+      >
+        <VideoReviewChecklist ref={reviewRef} onMetaChange={setReviewMeta} />
+      </AuditorShell>
+    );
+  }
 
   return (
     <div>
@@ -173,58 +185,7 @@ function Shell() {
           </div>
         ) : null}
         <div style={topBar.right}>
-          <div style={topBar.userMenuWrap} ref={menuRef}>
-            <button
-              style={topBar.userTrigger}
-              onClick={() => setMenuOpen((o) => !o)}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-            >
-              <span style={topBar.userAvatar}>
-                {(user.name || "?").charAt(0).toUpperCase()}
-              </span>
-              <span style={topBar.userTriggerName}>{user.name}</span>
-              <span
-                style={{
-                  ...topBar.chevron,
-                  transform: menuOpen ? "rotate(180deg)" : "none",
-                }}
-              >
-                ▾
-              </span>
-            </button>
-            {menuOpen && (
-              <div style={topBar.menu} role="menu">
-                <div style={topBar.menuHeader}>
-                  <span style={topBar.menuName}>{user.name}</span>
-                  {user.email && (
-                    <span style={topBar.menuEmail}>{user.email}</span>
-                  )}
-                  <span
-                    style={{
-                      ...topBar.roleBadge,
-                      background: badge.bg,
-                      color: badge.color,
-                      marginTop: 8,
-                      alignSelf: "flex-start",
-                    }}
-                  >
-                    {badge.label}
-                  </span>
-                </div>
-                <button
-                  style={topBar.menuLogout}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    logout();
-                  }}
-                  role="menuitem"
-                >
-                  ⎋ Log out
-                </button>
-              </div>
-            )}
-          </div>
+          <AccountMenu user={user} logout={logout} badge={badge} />
         </div>
       </div>
 
@@ -235,7 +196,6 @@ function Shell() {
           onExitReport={canSchedule ? () => setActiveTab("schedule") : undefined}
         />
       )}
-      {hasAnyTab && tab === "review" && <VideoReviewChecklist />}
       {hasAnyTab && tab === "admin" && <AdminPanel />}
       {!hasAnyTab && <RestrictedHome user={user} />}
     </div>
@@ -406,87 +366,10 @@ const topBar = {
     fontWeight: 800,
   },
 
-  // Account dropdown
-  userMenuWrap: { position: "relative" },
-  userTrigger: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "5px 10px 5px 5px",
-    borderRadius: 999,
-    border: "1px solid #e2e8f0",
-    background: "#ffffff",
-    cursor: "pointer",
-    fontFamily: "inherit",
-  },
-  userAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
-    background: "linear-gradient(135deg,#2563eb,#7c3aed)",
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: 800,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  userTriggerName: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#334155",
-    maxWidth: 140,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
   chevron: {
     fontSize: 10,
     color: "#94a3b8",
     transition: "transform 150ms ease",
-  },
-  menu: {
-    position: "absolute",
-    top: "calc(100% + 8px)",
-    right: 0,
-    minWidth: 210,
-    background: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 12,
-    boxShadow: "0 12px 30px -10px rgba(15,23,42,0.25)",
-    padding: 6,
-    zIndex: 50,
-  },
-  menuHeader: {
-    display: "flex",
-    flexDirection: "column",
-    padding: "8px 10px 10px",
-    borderBottom: "1px solid #f1f5f9",
-    marginBottom: 6,
-  },
-  menuName: { fontSize: 13.5, fontWeight: 700, color: "#0f172a" },
-  menuEmail: {
-    fontSize: 11.5,
-    color: "#94a3b8",
-    marginTop: 1,
-    wordBreak: "break-all",
-  },
-  menuLogout: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "9px 10px",
-    borderRadius: 8,
-    border: "none",
-    background: "transparent",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#b91c1c",
-    fontFamily: "inherit",
-    textAlign: "left",
   },
 };
 

@@ -1,4 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import {
   Document,
   Packer,
@@ -20,7 +26,232 @@ import api from "./api";
  * - 1-on-1 Coding checklist section (own toggle, separate from Group Coding)
  * - Session score out of 100 with a visible breakdown
  * - Feedback for the Tutor section, draftable from the selected observations
+ * - Subject Teaching Quality assessments (Math, Science, English, Coding)
  */
+
+// ========== SUBJECT TEACHING QUALITY DATA ==========
+const SUBJECT_TEACHING = {
+  math: {
+    label: "📐 Mathematics",
+    color: "#2563eb",
+    bad: [
+      "Tutor read notes without checking student understanding",
+      "No concrete examples used; only abstract explanations",
+      "Student was guessing; tutor didn't guide them to think carefully",
+      "Jumped to answers instead of letting student attempt first",
+      "Didn't explain WHY the method works, only HOW",
+      "Paced too fast; student lost understanding",
+      "No verification that student retained concepts",
+      "Didn't address student's errors or misconceptions",
+      "Made it feel like memorization, not understanding",
+      "Didn't connect new concept to prior knowledge",
+      "Gave up when student struggled; no scaffolding offered",
+      "Treated all students the same; no differentiation",
+      "No formative checks during the lesson",
+      "Didn't ask student to explain their reasoning",
+      "Session ended abruptly without summary or next steps",
+    ],
+    good: [
+      "Explained concepts step-by-step with examples",
+      "Checked understanding by asking questions",
+      "Allowed student time to think before helping",
+      "Used visuals or manipulatives to show the concept",
+      "Gave appropriate hints instead of direct answers",
+      "Paced the lesson to match student comprehension",
+      "Reviewed previous session and connected to new topic",
+      "Encouraged student to explain in their own words",
+      "Provided practice problems after explanation",
+      "Corrected errors gently and explained the reason",
+      "Used relatable, real-world examples",
+      "Adjusted teaching style when student didn't understand",
+      "Summarized key points at the end",
+      "Gave constructive feedback, not just 'good job'",
+      "Clear about what comes next",
+    ],
+    excellent: [
+      "Expertly broke down complex concepts into digestible steps",
+      "Asked open questions that deepened student thinking",
+      "Used multiple representations (visual, concrete, symbolic)",
+      "Student explained concepts back to tutor; understanding was clear",
+      "Tutor identified gaps before they became problems",
+      "Made mathematical connections across different topics",
+      "Student attempted hard problems with confidence due to tutor's scaffolding",
+      "Errors were turned into learning moments ('look what this tells us')",
+      "Tutor highlighted different problem-solving strategies",
+      "Lesson flowed naturally; student was fully engaged",
+      "Tutor caught misconceptions early and addressed them directly",
+      "Built strong conceptual understanding, not just procedural",
+      "Student left confident and ready for independent practice",
+      "Session showed deep pedagogical skill and subject mastery",
+      "Perfect balance of challenge and support",
+    ],
+  },
+  science: {
+    label: "🔬 Science",
+    color: "#7c3aed",
+    bad: [
+      "Tutor read the lesson without engaging student",
+      "No hands-on activities; pure lecture",
+      "Student didn't actually observe or experiment",
+      "Complex vocabulary used without explanation",
+      "Facts memorized but not understood",
+      "No connection to real world or student's life",
+      "Tutor answered all questions; no student inquiry",
+      "Data was collected but not analyzed",
+      "No discussion of WHY results happened",
+      "Misconceptions were not corrected",
+      "Student passively listened without participation",
+      "No model, diagram, or visual aid used",
+      "Experiments didn't match the concept being taught",
+      "Results were told to student rather than discovered",
+      "Student has no idea what to do with what they learned",
+    ],
+    good: [
+      "Concept was explained clearly with examples",
+      "Student did a simple hands-on activity",
+      "Observations were recorded accurately",
+      "Tutor asked 'why' questions throughout",
+      "Simple diagrams or models were used",
+      "Key vocabulary was explained before use",
+      "Tutor related concept to something student knows",
+      "Student made a prediction before seeing results",
+      "Results were discussed and explained",
+      "Tutor pointed out patterns in the data",
+      "Student understood the main concept",
+      "Lesson connected to real-world applications",
+      "Proper safety procedures were followed",
+      "Student asked questions and was encouraged",
+      "Clear summary at the end",
+    ],
+    excellent: [
+      "Student generated the hypothesis themselves",
+      "Experiment was engaging and hands-on from start to finish",
+      "Tutor guided discovery; student found answers, not told them",
+      "Deep discussion of cause and effect",
+      "Student understood WHY the results happened, not just WHAT",
+      "Multiple representations used (diagram, model, real object)",
+      "Tutor asked probing questions that pushed thinking deeper",
+      "Data analysis revealed a pattern or principle",
+      "Student could predict what would happen in a new scenario",
+      "Misconceptions were identified and corrected with evidence",
+      "Real-world connection was compelling and meaningful",
+      "Student left wanting to know MORE",
+      "Proper scientific vocabulary used and explained",
+      "Session showed genuine inquiry-based teaching",
+      "Student can apply this concept to new situations",
+    ],
+  },
+  english: {
+    label: "📚 English",
+    color: "#059669",
+    bad: [
+      "Tutor focused on grammar rules, not meaning",
+      "Student didn't actually read or write during session",
+      "Tutor answered all questions; student was passive",
+      "Text was too hard with no scaffolding provided",
+      "Memorization emphasized over comprehension",
+      "No discussion of characters, themes, or deeper meaning",
+      "Errors were corrected harshly without explanation",
+      "Student read only the title; content was skipped",
+      "Vocabulary words were given definitions, not explored",
+      "No connection made to student's own experiences",
+      "Writing was evaluated only on surface (spelling, grammar)",
+      "Student had no opportunity to express their thoughts",
+      "Tutor dominated the conversation",
+      "Text felt irrelevant to student's life",
+      "Session was a one-way lecture",
+    ],
+    good: [
+      "Student read passages with tutor's support",
+      "Comprehension was checked with questions",
+      "Tutor explained difficult vocabulary in context",
+      "Student discussed characters and plot",
+      "Connections were made to student's prior knowledge",
+      "Writing was encouraged and feedback was constructive",
+      "Sentence structure was explained with examples",
+      "Student's ideas were valued and discussed",
+      "Tutor modeled good reading fluency",
+      "Text selection matched student's level",
+      "Key ideas were identified and discussed",
+      "Student made simple predictions about the text",
+      "Positive feedback was given along with corrections",
+      "Lesson had clear beginning, middle, and end",
+      "Student left understanding the main message",
+    ],
+    excellent: [
+      "Student actively read and engaged with the text",
+      "Deep discussion of themes, symbolism, and author's intent",
+      "Student made inferences and supported them with evidence",
+      "Multiple interpretations were explored respectfully",
+      "Vocabulary was taught in rich context, not in isolation",
+      "Student connected text to their own life experiences",
+      "Writing was praised for ideas FIRST, mechanics second",
+      "Grammar and punctuation were taught through student's writing",
+      "Student's unique voice and perspective were celebrated",
+      "Tutor asked thought-provoking questions that sparked discussion",
+      "Student was left wanting to read or write more",
+      "Comprehension was nuanced, not just literal",
+      "Tutor modeled how readers actually think while reading",
+      "Student left with new appreciation for the text",
+      "Session showed genuine love of language and literature",
+    ],
+  },
+  coding: {
+    label: "💻 Coding",
+    color: "#0d9488",
+    bad: [
+      "Tutor pasted finished code; student only watched",
+      "No explanation of WHY the code works",
+      "Technical terms used without definition",
+      "Student never wrote code themselves",
+      "Errors were fixed for the student, not explained",
+      "Session was one-way lecture, no hands-on practice",
+      "Tutor didn't slow down to let student understand",
+      "Code was too complex for student's level",
+      "No connection to concepts student already knows",
+      "Student left confused about what they just saw",
+      "Tutor took over keyboard/screen when debugging",
+      "No testing or running of code",
+      "Concepts were treated as separate, not connected",
+      "Tutor showed impatience with student's pace",
+      "Student had no confidence to code on their own",
+    ],
+    good: [
+      "Tutor typed code live and explained each line",
+      "Code ran after each small change so student saw the result",
+      "Student wrote and ran some code themselves",
+      "Tutor demonstrated one example, then gave a similar problem",
+      "Error messages were explained to the student",
+      "Tutor asked student to predict what code will do",
+      "Prior concepts were reviewed before new material",
+      "Tutor waited for student to find bugs before pointing them out",
+      "Practice problems were assigned",
+      "Tutor answered 'why' questions patiently",
+      "Clear step-by-step demonstrations",
+      "Student understood the concept, not just the syntax",
+      "Next session's topic was previewed",
+      "Code was readable on screen (large font, no clutter)",
+      "Student left understanding what they built",
+    ],
+    excellent: [
+      "Student wrote most of the code; tutor guided as needed",
+      "Tutor explained concept BEFORE coding it",
+      "Student could explain what their code does in plain language",
+      "Multiple approaches to the same problem were discussed",
+      "Tutor taught HOW to debug, not just fixed the bug",
+      "Student practiced immediately after seeing a demo",
+      "Code was live-coded with narration, not pasted",
+      "Each small step was run and verified",
+      "Student made educated guesses and tested them",
+      "Tutor connected code to real-world applications",
+      "Errors became 'aha moments,' not frustrations",
+      "Student left confident to attempt similar problems",
+      "Tutor asked student to teach back what they learned",
+      "Session showed deep understanding of pedagogy, not just code",
+      "Student is excited to code more after this session",
+    ],
+  },
+};
 
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(() =>
@@ -83,8 +314,6 @@ const SECTIONS = [
   },
 ];
 
-// Extra section shown ONLY when the reviewer marks this as a group / coding session.
-// Kept separate from SECTIONS so 1-on-1 review scores aren't affected.
 const GROUP_SECTION = {
   id: "group",
   title: "Group & Coding Session",
@@ -105,48 +334,37 @@ const GROUP_SECTION = {
   ],
 };
 
-// Used for 1-on-1 CODING sessions. This one REPLACES the standard sections —
-// a coding review has no notebook, no document camera, no workbook — so it
-// carries its own setup and closing items and stands alone.
 const CODING_SECTION = {
   id: "code",
   title: "1-on-1 Coding Session",
   accent: "#0d9488",
   items: [
-    // Setup & professionalism
     "Joined the session on time",
     "Greeted the student by name",
     "Maintained stable audio/video and a quiet, professional background",
     "Confirmed the student could see the shared screen and editor clearly",
-    // Opening
     "Reviewed the previous session's code and checked what the student retained",
     "Stated what the session would build or cover",
     "Confirmed the student's editor and screen share were working before starting",
-    // Concept
     "Explained the concept before writing code, not only while typing",
     "Explained each new term when it was introduced (tag, attribute, selector, property, function, variable)",
     "Explained WHY — why this approach, why this structure — not only how",
     "Connected the new concept to code the student had already written",
-    // Demonstration
     "Wrote code live rather than pasting finished code",
     "Code was readable on screen — font size large enough, only relevant lines visible",
     "Ran the code and showed the result after each small change",
-    // Student practice
     "Student wrote and ran code themselves during the session",
     "Gave the student an exercise immediately after the demonstration",
     "Student typed the code rather than copying a pasted block",
     "Watched the student code live instead of only checking the finished result",
     "Demonstrated one example, then handed the next one to the student",
-    // Errors & debugging
     "Let the student find the error before pointing to it",
     "Taught the student to read the error message / use the console or inspector",
     "Explained the cause of the bug, not only the fix",
     "Did not take over the student's keyboard or screen control to fix it",
-    // Checking understanding
     "Asked the student to explain in their own words what the code does",
     "Asked open questions instead of 'do you understand?'",
     "Verified understanding with a working exercise, not only verbal confirmation",
-    // Closing
     "Asked the student to summarize the session before recapping it himself",
     "Recapped the key points after the student's attempt",
     "Assigned practice work to complete before the next session",
@@ -201,7 +419,6 @@ const OBSERVATIONS = {
       {
         text: "Tutor noted the student's grade is remarkable — even the school teacher praised her",
       },
-      // — added —
       { text: "Tutor opened by asking recall questions from the previous class, then continued from that point" },
       { text: "Tutor annotated directly on the lesson material while explaining" },
       { text: "Tutor had the student work on paper and show it to the camera" },
@@ -302,7 +519,6 @@ const OBSERVATIONS = {
         text: "Don't answer the question yourself — always encourage the student to answer",
         unchecks: ["during-1", "during-2"],
       },
-      // — added —
       {
         text: "Encouragement was generic ('good job') — name the specific action the student did well",
       },
@@ -446,7 +662,6 @@ const OBSERVATIONS = {
       {
         text: "More than 20 minutes were lost due to distractions and screen-sharing interruptions",
       },
-      // — added — tutor lateness is scored, student lateness is not
       {
         text: "Tutor joined approximately 8 minutes late",
         unchecks: ["start-0"],
@@ -464,7 +679,6 @@ const OBSERVATIONS = {
     label: "Group Coding",
     color: "#c026d3",
     items: [
-      // === Participation — every child engaged ===
       {
         text: "All students actively participated — every child wrote or ran code themselves",
       },
@@ -487,7 +701,6 @@ const OBSERVATIONS = {
       {
         text: "Tutor tracked who hadn't spoken or coded yet and included them",
       },
-      // === Balanced motivation — praise one without deflating others ===
       {
         text: "Praise was well balanced — every student received genuine recognition",
       },
@@ -508,7 +721,6 @@ const OBSERVATIONS = {
       {
         text: "A struggling student was encouraged privately without stopping the whole group",
       },
-      // === Collaboration — teamwork over competition ===
       {
         text: "Students helped each other before asking the tutor — great collaboration habit",
       },
@@ -528,7 +740,6 @@ const OBSERVATIONS = {
         text: "Session felt competitive instead of collaborative — kids raced instead of helping",
         unchecks: ["group-5"],
       },
-      // === Kid-specific coding observations ===
       {
         text: "Instructions were broken into small steps young kids could follow",
       },
@@ -554,7 +765,6 @@ const OBSERVATIONS = {
       {
         text: "Tool used was age-appropriate and visual (e.g. Scratch/blocks) for young kids",
       },
-      // === HTML & CSS fundamentals — kid-friendly ===
       {
         text: "Tutor explained what a tag or property does before using it (e.g., '<h1> makes a big heading', 'color changes the text color')",
       },
@@ -605,7 +815,6 @@ const OBSERVATIONS = {
     label: "1-on-1 Coding",
     color: "#0d9488",
     items: [
-      // — Positives —
       { text: "Explained the concept and the reasoning before writing any code" },
       { text: "Wrote all code live and narrated each line as it was typed" },
       { text: "Ran the code after each small change so the student saw the effect immediately" },
@@ -620,7 +829,6 @@ const OBSERVATIONS = {
       { text: "Assigned specific practice work and named the next session's topic" },
       { text: "Adjusted the pace to this student rather than following a fixed plan" },
       { text: "Checked whether the student felt confident and gave extra practice instead of moving to a new topic" },
-      // — Needs improvement —
       { text: "Tutor did not review the previous session's code", unchecks: ["code-4"] },
       {
         text: "Technical terms were used without explanation — the student nodded along",
@@ -724,7 +932,6 @@ const OBSERVATIONS = {
         text: "Request remote control / student control when needed to navigate the screen efficiently",
       },
       { text: "The tutor must summarize the topic" },
-      // — added —
       {
         text: "Demonstrate one problem, then hand the next to the student, rather than explaining continuously",
       },
@@ -769,16 +976,18 @@ const TEACHING_QUALITY = [
   { id: "tq5", text: "Is the tutor a good fit for this student?" },
 ];
 
-/* ---------------- Scoring ----------------
- * Three components, 100 points total, plus a small excellence bonus.
- * Not scored: technical issues, parent comments, student lateness — recorded
- * but not the tutor's fault. Tutor lateness IS scored (conduct).
- */
 const SCORE_WEIGHTS = { checklist: 55, quality: 30, conduct: 15 };
 const CONDUCT_PENALTY = 3;
 const TUTOR_LATE_PENALTY = 5;
 const EXCELLENT_BONUS = 1;
 const MAX_BONUS = 5;
+
+const SCORE_SEGMENT_COLOR = {
+  "Checklist completion": "#2563eb",
+  "Teaching quality": "#7c3aed",
+  "Session conduct": "#059669",
+  "Excellence bonus": "#0891b2",
+};
 
 const SCORE_BANDS = [
   { min: 90, label: "Excellent", color: "#15803d" },
@@ -908,24 +1117,83 @@ const buildInitialQuality = () => {
   return state;
 };
 
-const buildInitialState = (value = false) => {
+const buildInitialState = (value = null) => {
   const state = {};
   [...SECTIONS, GROUP_SECTION, CODING_SECTION].forEach((sec) => {
     sec.items.forEach((_, idx) => {
-      state[`${sec.id}-${idx}`] = value;
+      state[`${sec.id}-${idx}`] = { answer: value, comment: "" };
     });
   });
   return state;
 };
 
-export default function VideoReviewChecklist({
-  initialTutor = "",
-  initialStudent = "",
-  initialDate = "",
-  studentId = "",
-}) {
+const normalizeAnswers = (raw) => {
+  const fresh = buildInitialState(null);
+  if (!raw) return fresh;
+  const out = {};
+  Object.keys(fresh).forEach((key) => {
+    const v = raw[key];
+    if (v && typeof v === "object") {
+      out[key] = { answer: v.answer ?? null, comment: v.comment || "" };
+    } else {
+      out[key] = { answer: v ? "yes" : null, comment: "" };
+    }
+  });
+  return out;
+};
+
+const ANSWER_CHOICES = [
+  { val: "yes", label: "✓ Yes", bg: "#059669", border: "#059669" },
+  { val: "no", label: "✗ No", bg: "#dc2626", border: "#dc2626" },
+  { val: "na", label: "— N/A", bg: "#94a3b8", border: "#94a3b8" },
+];
+
+function AnswerButtons({ value, onChange, marginLeft }) {
+  return (
+    <div style={{ ...styles.qualityChoices, marginLeft, flexWrap: "wrap" }}>
+      {ANSWER_CHOICES.map((choice) => {
+        const selected = value === choice.val;
+        return (
+          <button
+            key={choice.val}
+            type="button"
+            onClick={() => onChange(selected ? null : choice.val)}
+            style={{
+              ...styles.qualityChoice,
+              background: selected ? choice.bg : "#ffffff",
+              color: selected ? "#ffffff" : choice.bg,
+              borderColor: choice.border,
+            }}
+          >
+            {choice.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function deriveTitle(text) {
+  const commaIdx = text.indexOf(",");
+  if (commaIdx > 8 && commaIdx < 50) return text.slice(0, commaIdx);
+  const words = text.split(" ");
+  if (words.length <= 6) return text.replace(/[?.,]$/, "");
+  return words.slice(0, 5).join(" ");
+}
+
+const VideoReviewChecklist = forwardRef(function VideoReviewChecklist(
+  {
+    initialTutor = "",
+    initialStudent = "",
+    initialDate = "",
+    studentId = "",
+    onMetaChange,
+  },
+  ref,
+) {
   const isMobile = useMediaQuery("(max-width: 768px)");
-  const [checked, setChecked] = useState(() => buildInitialState(false));
+  const [answers, setAnswers] = useState(() => buildInitialState(null));
+  const [obsSearch, setObsSearch] = useState("");
   const [quality, setQuality] = useState(() => buildInitialQuality());
   const [tutorName, setTutorName] = useState(initialTutor);
   const [studentName, setStudentName] = useState(initialStudent);
@@ -939,24 +1207,23 @@ export default function VideoReviewChecklist({
   const [tutorFeedback, setTutorFeedback] = useState("");
   const [selectedObservations, setSelectedObservations] = useState([]);
   const [activeCategory, setActiveCategory] = useState("strengths");
-  // "standard" = any non-coding subject | "group" = group coding class
-  // | "coding1" = 1-on-1 coding (its own checklist, not the standard one)
   const [sessionType, setSessionType] = useState("standard");
-  // Which panels are expanded. Everything starts collapsed except the first
-  // section, so the page opens short and the reviewer opens one phase at a time.
   const [openSections, setOpenSections] = useState({ start: true });
   const [rootDirHandle, setRootDirHandle] = useState(null);
   const [rootDirName, setRootDirName] = useState("");
   const [exporting, setExporting] = useState(false);
   const [savingToServer, setSavingToServer] = useState(false);
-  const [saveResult, setSaveResult] = useState(null); // {type: "success"|"error", message}
+  const [saveResult, setSaveResult] = useState(null);
 
-  // Past reviews loaded from the backend
+  // NEW: Subject teaching quality state
+  const [activeSubject, setActiveSubject] = useState(null);
+  const [activeTutorLevel, setActiveTutorLevel] = useState("good");
+
+  // Past reviews
   const [pastReviews, setPastReviews] = useState([]);
   const [loadingPast, setLoadingPast] = useState(false);
   const [showPast, setShowPast] = useState(false);
 
-  // Update fields when props change (new student selected)
   useEffect(() => {
     setTutorName(initialTutor);
   }, [initialTutor]);
@@ -967,7 +1234,10 @@ export default function VideoReviewChecklist({
     if (initialDate) setReviewDate(initialDate);
   }, [initialDate]);
 
-  // Load past reviews when studentId changes
+  useEffect(() => {
+    onMetaChange?.({ tutorName, studentName });
+  }, [tutorName, studentName, onMetaChange]);
+
   useEffect(() => {
     if (!studentId) {
       setPastReviews([]);
@@ -981,17 +1251,22 @@ export default function VideoReviewChecklist({
       .finally(() => setLoadingPast(false));
   }, [studentId]);
 
-  const toggle = (key) => setChecked((p) => ({ ...p, [key]: !p[key] }));
+  const setAnswer = (key, value) =>
+    setAnswers((p) => ({
+      ...p,
+      [key]: { ...p[key], answer: p[key]?.answer === value ? null : value },
+    }));
+  const setAnswerComment = (key, comment) =>
+    setAnswers((p) => ({ ...p, [key]: { ...p[key], comment } }));
   const uncheckAll = () => {
-    setChecked(buildInitialState(false));
+    setAnswers(buildInitialState(null));
     setQuality(buildInitialQuality());
   };
-  const checkAll = () => setChecked(buildInitialState(true));
+  const checkAll = () => setAnswers(buildInitialState("yes"));
   const clearObservations = () => {
     setSelectedObservations([]);
     setNotes("");
   };
-  // Reset the ENTIRE checklist to empty (checks, ratings, text, names). Confirms first.
   const clearAll = () => {
     if (
       !window.confirm(
@@ -999,7 +1274,7 @@ export default function VideoReviewChecklist({
       )
     )
       return;
-    setChecked(buildInitialState(false));
+    setAnswers(buildInitialState(null));
     setQuality(buildInitialQuality());
     setSelectedObservations([]);
     setNotes("");
@@ -1014,6 +1289,8 @@ export default function VideoReviewChecklist({
     setOpenSections({ start: true });
     setSaveResult(null);
   };
+
+  useImperativeHandle(ref, () => ({ clearAll }));
 
   const addObservation = (category, item) => {
     const tag = `[${OBSERVATIONS[category].label}]`;
@@ -1035,10 +1312,10 @@ export default function VideoReviewChecklist({
     ]);
     setNotes((p) => (p.trim() ? `${p}\n${line}` : line));
     if (item.unchecks && item.unchecks.length) {
-      setChecked((p) => {
+      setAnswers((p) => {
         const n = { ...p };
         item.unchecks.forEach((k) => {
-          n[k] = false;
+          n[k] = { answer: "no", comment: n[k]?.comment || "" };
         });
         return n;
       });
@@ -1059,14 +1336,11 @@ export default function VideoReviewChecklist({
   }, [reviewDate]);
 
   const activeSections = useMemo(() => {
-    // A 1-on-1 coding review uses ONLY the coding checklist — the standard
-    // items (notebook, document camera, workbook) don't apply to it.
     if (sessionType === "coding1") return [CODING_SECTION];
     if (sessionType === "group") return [...SECTIONS, GROUP_SECTION];
     return SECTIONS;
   }, [sessionType]);
 
-  // Observation tabs that make sense for this session type
   const visibleCategories = useMemo(
     () =>
       Object.keys(OBSERVATIONS).filter((c) => {
@@ -1077,13 +1351,11 @@ export default function VideoReviewChecklist({
     [sessionType],
   );
 
-  // If the active tab is hidden by a session-type change, fall back
   useEffect(() => {
     if (!visibleCategories.includes(activeCategory))
       setActiveCategory("strengths");
   }, [visibleCategories, activeCategory]);
 
-  // Open the first section of whichever checklist is active
   useEffect(() => {
     setOpenSections((p) => ({ ...p, [activeSections[0].id]: true }));
   }, [activeSections]);
@@ -1093,15 +1365,19 @@ export default function VideoReviewChecklist({
     let totalItems = 0,
       totalDone = 0;
     activeSections.forEach((sec) => {
-      const total = sec.items.length;
+      const applicable = sec.items.filter(
+        (_, idx) => answers[`${sec.id}-${idx}`]?.answer !== "na",
+      );
+      const total = applicable.length;
       const done = sec.items.reduce(
-        (acc, _, idx) => acc + (checked[`${sec.id}-${idx}`] ? 1 : 0),
+        (acc, _, idx) =>
+          acc + (answers[`${sec.id}-${idx}`]?.answer === "yes" ? 1 : 0),
         0,
       );
       perSection[sec.id] = {
         done,
         total,
-        pct: Math.round((done / total) * 100),
+        pct: total ? Math.round((done / total) * 100) : 0,
       };
       totalItems += total;
       totalDone += done;
@@ -1110,9 +1386,9 @@ export default function VideoReviewChecklist({
       perSection,
       totalItems,
       totalDone,
-      overallPct: Math.round((totalDone / totalItems) * 100),
+      overallPct: totalItems ? Math.round((totalDone / totalItems) * 100) : 0,
     };
-  }, [checked, activeSections]);
+  }, [answers, activeSections]);
 
   const score = useMemo(
     () => computeScore({ stats, quality, selectedObservations }),
@@ -1143,7 +1419,6 @@ export default function VideoReviewChecklist({
     }
   };
 
-  /* ---------- Save to server ---------- */
   const saveToServer = async () => {
     if (!studentId) {
       setSaveResult({
@@ -1164,7 +1439,7 @@ export default function VideoReviewChecklist({
     setSaveResult(null);
 
     const payload = {
-      checked,
+      checked: answers,
       quality,
       observations: selectedObservations,
       notes: notes.trim(),
@@ -1172,7 +1447,6 @@ export default function VideoReviewChecklist({
       recommendation: recommendation.trim(),
       tutorFeedback: tutorFeedback.trim(),
       sessionType,
-      // kept for older readers of the payload
       isGroupSession: sessionType === "group",
       isCodingSession: sessionType === "coding1",
       score: {
@@ -1198,7 +1472,6 @@ export default function VideoReviewChecklist({
         payload,
       });
       setSaveResult({ type: "success", message: "✓ Review saved to server" });
-      // Refresh past reviews list
       try {
         const rows = await api.getReviewsForStudent(studentId);
         setPastReviews(rows);
@@ -1214,12 +1487,11 @@ export default function VideoReviewChecklist({
     }
   };
 
-  /* ---------- Load a past review back into the form ---------- */
   const loadPastReview = (review) => {
     if (!review || !review.payload) return;
     if (!window.confirm("Replace current form with this past review?")) return;
     const p = review.payload;
-    setChecked(p.checked || buildInitialState(false));
+    setAnswers(normalizeAnswers(p.checked));
     setQuality(p.quality || buildInitialQuality());
     setSelectedObservations(p.observations || []);
     setNotes(p.notes || "");
@@ -1239,7 +1511,6 @@ export default function VideoReviewChecklist({
     setShowPast(false);
   };
 
-  /* ---------- Folder picker ---------- */
   const pickRootFolder = async () => {
     if (!window.showDirectoryPicker) {
       alert(
@@ -1262,7 +1533,6 @@ export default function VideoReviewChecklist({
     }
   };
 
-  /* ---------- DOCX export ---------- */
   const exportReport = async () => {
     const sanitize = (s) =>
       (s || "")
@@ -1358,7 +1628,6 @@ export default function VideoReviewChecklist({
       ),
     );
 
-    // Score block
     children.push(heading("Session Score", HeadingLevel.HEADING_1));
     children.push(
       new Paragraph({
@@ -1390,7 +1659,6 @@ export default function VideoReviewChecklist({
       );
     }
 
-    // Teaching Quality Assessment block
     const answeredQ = TEACHING_QUALITY.filter((q) => quality[q.id]?.answer);
     if (answeredQ.length) {
       children.push(
@@ -1445,7 +1713,9 @@ export default function VideoReviewChecklist({
         heading(`${sec.title}  [${s.done}/${s.total}]`, HeadingLevel.HEADING_2),
       );
       sec.items.forEach((item, idx) => {
-        children.push(checklistLine(!!checked[`${sec.id}-${idx}`], item));
+        children.push(
+          checklistLine(answers[`${sec.id}-${idx}`]?.answer === "yes", item),
+        );
       });
     });
 
@@ -1556,6 +1826,13 @@ export default function VideoReviewChecklist({
   };
 
   const activeObs = OBSERVATIONS[activeCategory];
+  const filteredObsItems = useMemo(() => {
+    const q = obsSearch.trim().toLowerCase();
+    if (!q) return activeObs.items;
+    return activeObs.items.filter((item) =>
+      item.text.toLowerCase().includes(q),
+    );
+  }, [activeObs, obsSearch]);
 
   const SESSION_TYPES = [
     {
@@ -1589,14 +1866,7 @@ export default function VideoReviewChecklist({
     return (
       <div style={{ marginTop: 14 }}>
         <div style={styles.metaLabelText}>Session type</div>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            marginTop: 8,
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={styles.segmentTrack}>
           {SESSION_TYPES.map((t) => {
             const on = sessionType === t.id;
             return (
@@ -1605,14 +1875,15 @@ export default function VideoReviewChecklist({
                 type="button"
                 onClick={() => setSessionType(t.id)}
                 style={{
-                  ...styles.typeBtn,
-                  background: on ? t.bg : "#ffffff",
-                  borderColor: on ? t.color : "#e2e8f0",
-                  color: on ? t.color : "#475569",
+                  ...styles.segmentBtn,
+                  background: on ? "#ffffff" : "transparent",
+                  color: on ? t.color : "#64748b",
+                  boxShadow: on
+                    ? "0 2px 6px -2px rgba(15,23,42,0.15)"
+                    : "none",
                   fontWeight: on ? 800 : 600,
                 }}
               >
-                <span style={{ fontSize: 16 }}>{t.icon}</span>
                 {t.label}
               </button>
             );
@@ -1623,7 +1894,6 @@ export default function VideoReviewChecklist({
     );
   };
 
-  // Collapsible wrapper for the long free-text panels at the bottom.
   const panel = ({ id, title, color, borderTop, hint, filled, children }) => (
     <section style={{ ...styles.notesSection, borderTop }}>
       <button
@@ -1673,101 +1943,7 @@ export default function VideoReviewChecklist({
           gap: isMobile ? 14 : styles.container.gap,
         }}
       >
-        {/* LEFT: Observation Library */}
-        <aside
-          style={{
-            ...styles.sidebar,
-            position: isMobile ? "static" : "sticky",
-          }}
-        >
-          <div
-            style={{
-              ...styles.sidebarInner,
-              maxHeight: isMobile ? "70vh" : styles.sidebarInner.maxHeight,
-            }}
-          >
-            <div style={styles.sidebarHeader}>
-              <span style={styles.libraryIcon}>📋</span>
-              <div>
-                <h2 style={styles.libraryTitle}>Observation Library</h2>
-                <p style={styles.librarySubtitle}>
-                  Click an item to add it to notes
-                </p>
-              </div>
-            </div>
-            <div style={styles.tabs}>
-              {visibleCategories.map((catId) => {
-                const cat = OBSERVATIONS[catId];
-                const isActive = activeCategory === catId;
-                return (
-                  <button
-                    key={catId}
-                    type="button"
-                    onClick={() => setActiveCategory(catId)}
-                    style={{
-                      ...styles.tab,
-                      background: isActive ? cat.color : "#f1f5f9",
-                      color: isActive ? "#ffffff" : "#475569",
-                      borderColor: isActive ? cat.color : "#e2e8f0",
-                    }}
-                  >
-                    {cat.label}
-                    <span
-                      style={{
-                        ...styles.tabCount,
-                        background: isActive
-                          ? "rgba(255,255,255,0.25)"
-                          : "#e2e8f0",
-                        color: isActive ? "#ffffff" : "#64748b",
-                      }}
-                    >
-                      {cat.items.length}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div style={styles.obsList}>
-              {activeObs.items.map((item, idx) => {
-                const isSelected = selectedObservations.some(
-                  (o) => o.text === item.text && o.category === activeCategory,
-                );
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => addObservation(activeCategory, item)}
-                    disabled={isSelected}
-                    style={{
-                      ...styles.obsCard,
-                      borderColor: isSelected ? activeObs.color : "#e2e8f0",
-                      background: isSelected ? "#f0fdf4" : "#ffffff",
-                      cursor: isSelected ? "default" : "pointer",
-                      opacity: isSelected ? 0.65 : 1,
-                    }}
-                  >
-                    <span
-                      style={{
-                        ...styles.obsBadge,
-                        background: activeObs.color,
-                      }}
-                    >
-                      {isSelected ? "✓" : "+"}
-                    </span>
-                    <span style={styles.obsText}>{item.text}</span>
-                    {item.unchecks && item.unchecks.length > 0 && (
-                      <span style={styles.obsHint}>
-                        auto-unchecks {item.unchecks.length}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
-
-        {/* RIGHT: main content */}
+        {/* CENTER: evaluation form */}
         <div style={styles.main}>
           {/* Past reviews panel */}
           {studentId && (
@@ -1968,10 +2144,10 @@ export default function VideoReviewChecklist({
               </div>
               <div style={styles.actions}>
                 <button style={styles.btn} onClick={checkAll}>
-                  Check all
+                  Mark all Yes
                 </button>
                 <button style={styles.btn} onClick={uncheckAll}>
-                  Uncheck all
+                  Reset all
                 </button>
                 <button style={styles.btn} onClick={clearObservations}>
                   Clear observations
@@ -1988,28 +2164,6 @@ export default function VideoReviewChecklist({
                   title="Reset the whole checklist and empty every field"
                 >
                   🗑️ Clear all
-                </button>
-                <button
-                  style={{
-                    ...styles.btnSave,
-                    ...(savingToServer ? { opacity: 0.6, cursor: "wait" } : {}),
-                  }}
-                  onClick={saveToServer}
-                  disabled={savingToServer || !studentId}
-                  title={
-                    !studentId
-                      ? "No student selected"
-                      : "Save review to MySQL server"
-                  }
-                >
-                  {savingToServer ? "Saving…" : "💾 Save to server"}
-                </button>
-                <button
-                  style={styles.btnPrimary}
-                  onClick={exportReport}
-                  disabled={exporting}
-                >
-                  {exporting ? "Exporting…" : "📄 Export .docx"}
                 </button>
               </div>
 
@@ -2031,8 +2185,14 @@ export default function VideoReviewChecklist({
             <div style={styles.scoreBox}>
               <div style={styles.scoreTop}>
                 <div>
-                  <div style={styles.scoreLabel}>Session score</div>
-                  <div style={{ ...styles.scoreBand, color: score.band.color }}>
+                  <div style={styles.scoreLabel}>Current score</div>
+                  <div
+                    style={{
+                      ...styles.scoreBandPill,
+                      color: score.band.color,
+                      background: `${score.band.color}1a`,
+                    }}
+                  >
                     {score.band.label}
                   </div>
                 </div>
@@ -2041,6 +2201,34 @@ export default function VideoReviewChecklist({
                   <span style={styles.scoreOutOf}>/100</span>
                 </div>
               </div>
+
+              <div style={styles.scoreSegmentTrack}>
+                {score.breakdown.map((b) => (
+                  <div
+                    key={b.label}
+                    style={{
+                      ...styles.scoreSegment,
+                      width: `${Math.max(0, (b.got / 100) * 100)}%`,
+                      background: SCORE_SEGMENT_COLOR[b.label],
+                    }}
+                    title={`${b.label}: ${b.got}/${b.max}`}
+                  />
+                ))}
+              </div>
+              <div style={styles.scoreLegendRow}>
+                {score.breakdown.map((b) => (
+                  <span key={b.label} style={styles.scoreLegendItem}>
+                    <span
+                      style={{
+                        ...styles.scoreLegendDot,
+                        background: SCORE_SEGMENT_COLOR[b.label],
+                      }}
+                    />
+                    {b.label}
+                  </span>
+                ))}
+              </div>
+
               <div style={styles.scoreRows}>
                 {score.breakdown.map((b) => (
                   <div
@@ -2075,101 +2263,8 @@ export default function VideoReviewChecklist({
             </div>
           </header>
 
-          {/* Feedback for the Tutor — sits directly under the score */}
-          {panel({
-            id: "feedback",
-            title: "📨 Feedback for the Tutor",
-            color: "#15803d",
-            borderTop: "2px solid #bbf7d0",
-            filled: tutorFeedback.length,
-            hint: "This is what the tutor receives. Draft it from your selected observations, then edit the wording before sending.",
-            children: (
-              <>
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    marginBottom: 10,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={draftFeedback}
-                    style={styles.btn}
-                  >
-                    ✍️ Draft from observations
-                  </button>
-                  <button
-                    type="button"
-                    onClick={copyFeedback}
-                    style={styles.btn}
-                    disabled={!tutorFeedback.trim()}
-                  >
-                    📋 Copy
-                  </button>
-                </div>
-                <textarea
-                  value={tutorFeedback}
-                  onChange={(e) => setTutorFeedback(e.target.value)}
-                  placeholder={`What went well\n- ...\n\nWhat to improve\n- ...\n\nFocus for the next session\n- ...`}
-                  style={{
-                    ...styles.textarea,
-                    borderColor: "#bbf7d0",
-                    minHeight: 220,
-                    lineHeight: 1.7,
-                  }}
-                />
-              </>
-            ),
-          })}
-
-          {selectedObservations.length > 0 && (
-            <section style={styles.selectedSection}>
-              <div style={styles.selectedHeader}>
-                Selected Observations ({selectedObservations.length})
-              </div>
-              <div style={styles.chipRow}>
-                {selectedObservations.map((o, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      ...styles.chip,
-                      borderColor: OBSERVATIONS[o.category].color,
-                    }}
-                  >
-                    <span
-                      style={{
-                        ...styles.chipDot,
-                        background: OBSERVATIONS[o.category].color,
-                      }}
-                    />
-                    <div style={styles.chipText}>
-                      <div
-                        style={{
-                          ...styles.chipCategoryLabel,
-                          color: OBSERVATIONS[o.category].color,
-                        }}
-                      >
-                        {OBSERVATIONS[o.category].label}
-                      </div>
-                      <div>{o.text}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeObservation(i)}
-                      style={styles.chipRemove}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
           <main style={styles.sections}>
-            {/* Teaching Quality Assessment — 5 yes/no/N/A questions */}
+            {/* Teaching Quality Assessment */}
             <section style={styles.qualitySection}>
               <button
                 type="button"
@@ -2212,90 +2307,46 @@ export default function VideoReviewChecklist({
               </button>
 
               {openSections.quality && (
-              <ol style={styles.qualityList}>
-                {TEACHING_QUALITY.map((q, idx) => {
-                  const ans = quality[q.id] || { answer: null, comment: "" };
-                  return (
-                    <li key={q.id} style={styles.qualityItem}>
-                      <div style={styles.qualityQuestionRow}>
-                        <span style={styles.qualityNum}>{idx + 1}</span>
-                        <span style={styles.qualityText}>{q.text}</span>
-                      </div>
-                      <div
-                        style={{
-                          ...styles.qualityChoices,
-                          marginLeft: isMobile
-                            ? 0
-                            : styles.qualityChoices.marginLeft,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {[
-                          {
-                            val: "yes",
-                            label: "✓ Yes",
-                            bg: "#059669",
-                            border: "#059669",
-                          },
-                          {
-                            val: "no",
-                            label: "✗ No",
-                            bg: "#dc2626",
-                            border: "#dc2626",
-                          },
-                          {
-                            val: "na",
-                            label: "— N/A",
-                            bg: "#94a3b8",
-                            border: "#94a3b8",
-                          },
-                        ].map((choice) => {
-                          const selected = ans.answer === choice.val;
-                          return (
-                            <button
-                              key={choice.val}
-                              type="button"
-                              onClick={() =>
-                                setQuality((p) => ({
-                                  ...p,
-                                  [q.id]: {
-                                    ...p[q.id],
-                                    answer: selected ? null : choice.val,
-                                  },
-                                }))
-                              }
-                              style={{
-                                ...styles.qualityChoice,
-                                background: selected ? choice.bg : "#ffffff",
-                                color: selected ? "#ffffff" : choice.bg,
-                                borderColor: choice.border,
-                              }}
-                            >
-                              {choice.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <textarea
-                        value={ans.comment}
-                        onChange={(e) =>
-                          setQuality((p) => ({
-                            ...p,
-                            [q.id]: { ...p[q.id], comment: e.target.value },
-                          }))
-                        }
-                        placeholder="Optional: explain your answer..."
-                        style={styles.qualityComment}
-                      />
-                    </li>
-                  );
-                })}
-              </ol>
+                <ol style={styles.qualityList}>
+                  {TEACHING_QUALITY.map((q, idx) => {
+                    const ans = quality[q.id] || { answer: null, comment: "" };
+                    return (
+                      <li key={q.id} style={styles.qualityItem}>
+                        <div style={styles.qualityQuestionRow}>
+                          <span style={styles.qualityNum}>{idx + 1}</span>
+                          <span style={styles.qualityText}>{q.text}</span>
+                        </div>
+                        <AnswerButtons
+                          value={ans.answer}
+                          marginLeft={isMobile ? 0 : 32}
+                          onChange={(val) =>
+                            setQuality((p) => ({
+                              ...p,
+                              [q.id]: { ...p[q.id], answer: val },
+                            }))
+                          }
+                        />
+                        <textarea
+                          value={ans.comment}
+                          onChange={(e) =>
+                            setQuality((p) => ({
+                              ...p,
+                              [q.id]: { ...p[q.id], comment: e.target.value },
+                            }))
+                          }
+                          placeholder="Optional: explain your answer..."
+                          style={styles.qualityComment}
+                        />
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </section>
 
             {activeSections.map((sec) => {
               const s = stats.perSection[sec.id];
+              const phaseIdx = SECTIONS.findIndex((x) => x.id === sec.id);
               return (
                 <section key={sec.id} style={styles.section}>
                   <button
@@ -2306,9 +2357,18 @@ export default function VideoReviewChecklist({
                   >
                     <span style={styles.sectionTitleWrap}>
                       <span
+                        style={{ ...styles.sectionPlay, color: sec.accent }}
+                      >
+                        ▶
+                      </span>
+                      <span
                         style={{ ...styles.sectionDot, background: sec.accent }}
                       />
-                      <span style={styles.sectionTitle}>{sec.title}</span>
+                      <span style={styles.sectionTitle}>
+                        {phaseIdx >= 0
+                          ? `Phase ${phaseIdx + 1}: ${sec.title}`
+                          : sec.title}
+                      </span>
                     </span>
                     <span
                       style={{
@@ -2340,131 +2400,486 @@ export default function VideoReviewChecklist({
                     />
                   </div>
                   {openSections[sec.id] && (
-                  <ul style={styles.list}>
-                    {sec.items.map((item, idx) => {
-                      const key = `${sec.id}-${idx}`;
-                      const isChecked = !!checked[key];
-                      return (
-                        <li key={key} style={styles.listItem}>
-                          <button
-                            type="button"
-                            onClick={() => toggle(key)}
-                            style={{
-                              ...styles.checkRow,
-                              background: isChecked ? "#f0fdf4" : "#ffffff",
-                              borderColor: isChecked ? "#86efac" : "#e2e8f0",
-                            }}
-                          >
-                            <span
-                              style={{
-                                ...styles.checkbox,
-                                background: isChecked ? sec.accent : "#ffffff",
-                                borderColor: isChecked ? sec.accent : "#cbd5e1",
-                              }}
-                            >
-                              {isChecked && (
-                                <svg
-                                  viewBox="0 0 16 16"
-                                  width="12"
-                                  height="12"
-                                  fill="none"
-                                  stroke="white"
-                                  strokeWidth="3"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <polyline points="3 8.5 6.5 12 13 4.5" />
-                                </svg>
+                    <ul style={styles.list}>
+                      {sec.items.map((item, idx) => {
+                        const key = `${sec.id}-${idx}`;
+                        const itemAns = answers[key] || {
+                          answer: null,
+                          comment: "",
+                        };
+                        const title = deriveTitle(item);
+                        const showDescription = title !== item;
+                        return (
+                          <li key={key} style={styles.listItem}>
+                            <div style={styles.itemCard}>
+                              <div style={styles.itemHeaderRow}>
+                                <span style={styles.itemTitle}>{title}</span>
+                                <span style={styles.requiredBadge}>
+                                  Required
+                                </span>
+                              </div>
+                              {showDescription && (
+                                <p style={styles.itemDescription}>{item}</p>
                               )}
-                            </span>
-                            <span
-                              style={{
-                                ...styles.itemText,
-                                color: isChecked ? "#15803d" : "#0f172a",
-                              }}
-                            >
-                              {item}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                              <AnswerButtons
+                                value={itemAns.answer}
+                                marginLeft={0}
+                                onChange={(val) => setAnswer(key, val)}
+                              />
+                              {itemAns.answer === "no" && (
+                                <div style={styles.warnBox}>
+                                  <span style={styles.warnIcon}>⚠</span>
+                                  <textarea
+                                    value={itemAns.comment}
+                                    onChange={(e) =>
+                                      setAnswerComment(key, e.target.value)
+                                    }
+                                    placeholder="Explain why this wasn't met (optional)"
+                                    style={styles.warnTextarea}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   )}
                 </section>
               );
             })}
           </main>
 
-          {panel({
-            id: "notes",
-            title: "Reviewer Notes",
-            filled: notes.length,
-            children: (
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Strengths, areas for improvement, specific timestamps, suggested next steps..."
-                style={styles.textarea}
-              />
-            ),
-          })}
-
-          {/* Issues Seen */}
-          {panel({
-            id: "issues",
-            title: "⚠️ Issues Seen in This Session",
-            color: "#b91c1c",
-            borderTop: "2px solid #fee2e2",
-            filled: issuesSeen.length,
-            hint: "Describe specific issues observed — connection problems, lateness, energy level, behaviour, etc.",
-            children: (
-              <textarea
-                value={issuesSeen}
-                onChange={(e) => setIssuesSeen(e.target.value)}
-                placeholder={`e.g.\n1. Internet Connection Issue\nAn audio/internet issue was observed in one of the sessions from the tutor's side.\n\n2. Lateness\nTutor was late on two sessions — approximately 3 min 7 sec late in one session and 5 min 54 sec late in another.\n\n3. Sleepiness / Low Energy\nThis was a recurring pattern across most sessions reviewed...`}
-                style={{
-                  ...styles.textarea,
-                  borderColor: "#fecaca",
-                  minHeight: 200,
-                  lineHeight: 1.7,
-                }}
-              />
-            ),
-          })}
-
-          {/* Recommendation */}
-          {panel({
-            id: "recommend",
-            title: "💡 Recommendation",
-            color: "#1d4ed8",
-            borderTop: "2px solid #bfdbfe",
-            filled: recommendation.length,
-            hint: "Specific recommendation for this tutor/student going forward.",
-            children: (
-              <textarea
-                value={recommendation}
-                onChange={(e) => setRecommendation(e.target.value)}
-                placeholder={`e.g.\nThe current teaching approach appears effective. To further support progress:\n- Additional practice with fraction concepts\n- More step-by-step guidance on challenging problems\n- Encourage tutor to maintain higher energy levels throughout sessions`}
-                style={{
-                  ...styles.textarea,
-                  borderColor: "#bfdbfe",
-                  minHeight: 160,
-                  lineHeight: 1.7,
-                }}
-              />
-            ),
-          })}
-
-          <footer style={styles.footer}>
-            <span>Evangadi Tutor Review · {new Date().getFullYear()}</span>
-          </footer>
+          <div style={styles.footer}>
+            Evangadi Tutor Review · {new Date().getFullYear()}
+          </div>
         </div>
+
+        {/* RIGHT: Observation Library + Review Synthesis */}
+        <aside
+          style={{
+            ...styles.sidebar,
+            position: isMobile ? "static" : "sticky",
+            maxHeight: isMobile ? "none" : styles.sidebar.maxHeight,
+          }}
+        >
+          <div style={styles.sidebarScroll}>
+            <div style={styles.sidebarInner}>
+              <div style={styles.sidebarHeader}>
+                <span style={styles.libraryIcon}>📋</span>
+                <div>
+                  <h2 style={styles.libraryTitle}>Observation Library</h2>
+                  <p style={styles.librarySubtitle}>
+                    Click an item to add it to notes
+                  </p>
+                </div>
+              </div>
+              <div style={styles.obsSearchWrap}>
+                <input
+                  type="text"
+                  value={obsSearch}
+                  onChange={(e) => setObsSearch(e.target.value)}
+                  placeholder="Search standard observations…"
+                  style={styles.obsSearchInput}
+                />
+              </div>
+              <div style={styles.tabs}>
+                {visibleCategories.map((catId) => {
+                  const cat = OBSERVATIONS[catId];
+                  const isActive = activeCategory === catId;
+                  return (
+                    <button
+                      key={catId}
+                      type="button"
+                      onClick={() => setActiveCategory(catId)}
+                      style={{
+                        ...styles.tab,
+                        background: isActive ? cat.color : "#f1f5f9",
+                        color: isActive ? "#ffffff" : "#475569",
+                        borderColor: isActive ? cat.color : "#e2e8f0",
+                      }}
+                    >
+                      {cat.label}
+                      <span
+                        style={{
+                          ...styles.tabCount,
+                          background: isActive
+                            ? "rgba(255,255,255,0.25)"
+                            : "#e2e8f0",
+                          color: isActive ? "#ffffff" : "#64748b",
+                        }}
+                      >
+                        {cat.items.length}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={styles.obsList}>
+                {filteredObsItems.length === 0 && (
+                  <p style={styles.obsEmpty}>No observations match "{obsSearch}".</p>
+                )}
+                {filteredObsItems.map((item, idx) => {
+                  const isSelected = selectedObservations.some(
+                    (o) => o.text === item.text && o.category === activeCategory,
+                  );
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => addObservation(activeCategory, item)}
+                      disabled={isSelected}
+                      style={{
+                        ...styles.obsCard,
+                        borderColor: isSelected ? activeObs.color : "#e2e8f0",
+                        background: isSelected ? "#f0fdf4" : "#ffffff",
+                        cursor: isSelected ? "default" : "pointer",
+                        opacity: isSelected ? 0.65 : 1,
+                      }}
+                    >
+                      <span
+                        style={{
+                          ...styles.obsBadge,
+                          background: activeObs.color,
+                        }}
+                      >
+                        {isSelected ? "✓" : "+"}
+                      </span>
+                      <span style={styles.obsText}>{item.text}</span>
+                      {item.unchecks && item.unchecks.length > 0 && (
+                        <span style={styles.obsHint}>
+                          auto-unchecks {item.unchecks.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SUBJECT TEACHING QUALITY SECTION */}
+            {selectedObservations.length > 0 && (
+              <section style={{...styles.selectedSection, marginTop: 20, borderTop: "1px solid #e2e8f0", paddingTop: 18}}>
+                <h3 style={{...styles.libraryTitle, marginBottom: 12}}>🎓 Subject Teaching Quality</h3>
+                <p style={{fontSize: 12, color: "#64748b", marginBottom: 12}}>
+                  Rate how well the tutor taught each subject
+                </p>
+                
+                <div style={{marginBottom: 12}}>
+                  <div style={{fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em"}}>
+                    Subject
+                  </div>
+                  <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6}}>
+                    {Object.entries(SUBJECT_TEACHING).map(([key, subject]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setActiveSubject(key)}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          border: activeSubject === key ? `2px solid ${subject.color}` : "1px solid #e2e8f0",
+                          background: activeSubject === key ? `${subject.color}1a` : "#f8fafc",
+                          color: activeSubject === key ? subject.color : "#64748b",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {subject.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {activeSubject && (
+                  <div>
+                    <div style={{fontSize: 11, fontWeight: 700, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.08em"}}>
+                      Teaching Quality
+                    </div>
+                    <div style={{display: "flex", gap: 6, marginBottom: 12}}>
+                      {["bad", "good", "excellent"].map((level) => (
+                        <button
+                          key={level}
+                          type="button"
+                          onClick={() => setActiveTutorLevel(level)}
+                          style={{
+                            flex: 1,
+                            padding: "7px 10px",
+                            borderRadius: 8,
+                            border: activeTutorLevel === level ? "2px solid #0f172a" : "1px solid #e2e8f0",
+                            background: activeTutorLevel === level ? "#0f172a" : "#f8fafc",
+                            color: activeTutorLevel === level ? "#ffffff" : "#64748b",
+                            cursor: "pointer",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            fontFamily: "inherit",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {level === "excellent" ? "⭐ Exc" : level === "good" ? "✓ Good" : "✗ Bad"}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{...styles.obsList, maxHeight: 250}}>
+                      {SUBJECT_TEACHING[activeSubject][activeTutorLevel].map((comment, idx) => {
+                        const subject = SUBJECT_TEACHING[activeSubject];
+                        const isSelected = selectedObservations.some(
+                          (o) => o.text === comment && o.category === "subjectTeaching",
+                        );
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (!isSelected) {
+                                setSelectedObservations((p) => [
+                                  ...p,
+                                  {
+                                    category: "subjectTeaching",
+                                    text: comment,
+                                    subject: activeSubject,
+                                    level: activeTutorLevel,
+                                  },
+                                ]);
+                                setNotes((n) => (n.trim() ? `${n}\n[${subject.label}/${activeTutorLevel}] ${comment}` : `[${subject.label}/${activeTutorLevel}] ${comment}`));
+                              }
+                            }}
+                            disabled={isSelected}
+                            style={{
+                              ...styles.obsCard,
+                              borderColor: isSelected ? subject.color : "#e2e8f0",
+                              borderLeftWidth: 4,
+                              borderLeftColor: subject.color,
+                              background: isSelected ? `${subject.color}08` : "#ffffff",
+                              cursor: isSelected ? "default" : "pointer",
+                              opacity: isSelected ? 0.6 : 1,
+                            }}
+                          >
+                            <span
+                              style={{
+                                ...styles.obsBadge,
+                                background: subject.color,
+                              }}
+                            >
+                              {isSelected ? "✓" : "+"}
+                            </span>
+                            <span style={styles.obsText}>{comment}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {selectedObservations.length > 0 && (
+              <section style={styles.selectedSection}>
+                <div style={styles.selectedHeader}>
+                  Selected Observations ({selectedObservations.length})
+                </div>
+                <div style={styles.chipRow}>
+                  {selectedObservations.map((o, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        ...styles.chip,
+                        borderColor: o.category === "subjectTeaching" ? SUBJECT_TEACHING[o.subject]?.color : OBSERVATIONS[o.category]?.color,
+                      }}
+                    >
+                      <span
+                        style={{
+                          ...styles.chipDot,
+                          background: o.category === "subjectTeaching" ? SUBJECT_TEACHING[o.subject]?.color : OBSERVATIONS[o.category]?.color,
+                        }}
+                      />
+                      <div style={styles.chipText}>
+                        <div
+                          style={{
+                            ...styles.chipCategoryLabel,
+                            color: o.category === "subjectTeaching" ? SUBJECT_TEACHING[o.subject]?.color : OBSERVATIONS[o.category]?.color,
+                          }}
+                        >
+                          {o.category === "subjectTeaching" ? `${SUBJECT_TEACHING[o.subject]?.label} (${o.level})` : OBSERVATIONS[o.category]?.label}
+                        </div>
+                        <div>{o.text}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeObservation(i)}
+                        style={styles.chipRemove}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <section style={styles.synthesisGroup}>
+              <h3 style={styles.synthesisTitle}>Review Synthesis</h3>
+
+              {panel({
+                id: "feedback",
+                title: "📨 Feedback for the Tutor",
+                color: "#15803d",
+                filled: tutorFeedback.length,
+                hint: "This is what the tutor receives. Draft it from your selected observations, then edit the wording before sending.",
+                children: (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        marginBottom: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={draftFeedback}
+                        style={styles.btn}
+                      >
+                        ✍️ Draft from observations
+                      </button>
+                      <button
+                        type="button"
+                        onClick={copyFeedback}
+                        style={styles.btn}
+                        disabled={!tutorFeedback.trim()}
+                      >
+                        📋 Copy
+                      </button>
+                    </div>
+                    <textarea
+                      value={tutorFeedback}
+                      onChange={(e) => setTutorFeedback(e.target.value)}
+                      placeholder={`What went well\n- ...\n\nWhat to improve\n- ...\n\nFocus for the next session\n- ...`}
+                      style={{
+                        ...styles.textarea,
+                        borderColor: "#bbf7d0",
+                        minHeight: 160,
+                        lineHeight: 1.7,
+                      }}
+                    />
+                  </>
+                ),
+              })}
+
+              {panel({
+                id: "notes",
+                title: "Internal Reviewer Notes",
+                filled: notes.length,
+                children: (
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Strengths, areas for improvement, specific timestamps, suggested next steps..."
+                    style={styles.textarea}
+                  />
+                ),
+              })}
+
+              {panel({
+                id: "issues",
+                title: "⚠️ Issues Seen in This Session",
+                color: "#b91c1c",
+                filled: issuesSeen.length,
+                hint: "Describe specific issues observed — connection problems, lateness, energy level, behaviour, etc.",
+                children: (
+                  <textarea
+                    value={issuesSeen}
+                    onChange={(e) => setIssuesSeen(e.target.value)}
+                    placeholder={`e.g.\n1. Internet Connection Issue\nAn audio/internet issue was observed in one of the sessions from the tutor's side.\n\n2. Lateness\nTutor was late on two sessions — approximately 3 min 7 sec late in one session and 5 min 54 sec late in another.\n\n3. Sleepiness / Low Energy\nThis was a recurring pattern across most sessions reviewed...`}
+                    style={{
+                      ...styles.textarea,
+                      borderColor: "#fecaca",
+                      minHeight: 160,
+                      lineHeight: 1.7,
+                    }}
+                  />
+                ),
+              })}
+
+              {panel({
+                id: "recommend",
+                title: "💡 Recommendation",
+                color: "#1d4ed8",
+                filled: recommendation.length,
+                hint: "Specific recommendation for this tutor/student going forward.",
+                children: (
+                  <textarea
+                    value={recommendation}
+                    onChange={(e) => setRecommendation(e.target.value)}
+                    placeholder={`e.g.\nThe current teaching approach appears effective. To further support progress:\n- Additional practice with fraction concepts\n- More step-by-step guidance on challenging problems\n- Encourage tutor to maintain higher energy levels throughout sessions`}
+                    style={{
+                      ...styles.textarea,
+                      borderColor: "#bfdbfe",
+                      minHeight: 140,
+                      lineHeight: 1.7,
+                    }}
+                  />
+                ),
+              })}
+            </section>
+          </div>
+
+          {/* Sticky export/save footer */}
+          <div style={styles.stickyFooter}>
+            {saveResult && (
+              <div
+                style={{
+                  ...styles.saveResult,
+                  marginTop: 0,
+                  marginBottom: 8,
+                  ...(saveResult.type === "success"
+                    ? styles.saveSuccess
+                    : styles.saveError),
+                }}
+              >
+                {saveResult.message}
+              </div>
+            )}
+            <div style={styles.stickyFooterBtns}>
+              <button
+                style={styles.btnExport}
+                onClick={exportReport}
+                disabled={exporting}
+              >
+                {exporting ? "Exporting…" : "📄 Export .docx"}
+              </button>
+              <button
+                style={{
+                  ...styles.btnSave,
+                  marginLeft: 0,
+                  flex: 1,
+                  ...(savingToServer ? { opacity: 0.6, cursor: "wait" } : {}),
+                }}
+                onClick={saveToServer}
+                disabled={savingToServer || !studentId}
+                title={
+                  !studentId
+                    ? "No student selected"
+                    : "Save review to MySQL server"
+                }
+              >
+                {savingToServer ? "Saving…" : "💾 Save to server"}
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
-}
+});
 
+export default VideoReviewChecklist;
+
+// ========== STYLES ==========
 const styles = {
   page: {
     minHeight: "100vh",
@@ -2479,12 +2894,30 @@ const styles = {
     maxWidth: 1680,
     margin: "0 auto",
     display: "grid",
-    gridTemplateColumns: "minmax(380px, 460px) 1fr",
+    gridTemplateColumns: "1fr minmax(380px, 440px)",
     gap: 24,
     alignItems: "flex-start",
   },
 
-  sidebar: { position: "sticky", top: 24, alignSelf: "flex-start" },
+  sidebar: {
+    position: "sticky",
+    top: 24,
+    alignSelf: "flex-start",
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+    maxHeight: "calc(100vh - 48px)",
+    width: "100%",
+  },
+  sidebarScroll: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: 16,
+    paddingRight: 2,
+  },
   sidebarInner: {
     background: "#ffffff",
     border: "1px solid #e2e8f0",
@@ -2493,7 +2926,27 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     overflow: "hidden",
-    maxHeight: "calc(100vh - 48px)",
+    flexShrink: 0,
+  },
+  obsSearchWrap: { padding: "10px 14px 0" },
+  obsSearchInput: {
+    width: "100%",
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    fontFamily: "inherit",
+    fontSize: 12.5,
+    outline: "none",
+    color: "#0f172a",
+    background: "#f8fafc",
+    boxSizing: "border-box",
+  },
+  obsEmpty: {
+    fontSize: 12.5,
+    color: "#94a3b8",
+    textAlign: "center",
+    padding: "16px 8px",
+    margin: 0,
   },
   sidebarHeader: {
     display: "flex",
@@ -2534,7 +2987,7 @@ const styles = {
     textAlign: "center",
   },
   obsList: {
-    flex: 1,
+    maxHeight: 340,
     overflowY: "auto",
     padding: "12px 14px",
     display: "flex",
@@ -2696,16 +3149,23 @@ const styles = {
     background: "#ffffff",
   },
 
-  typeBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "10px 14px",
-    borderRadius: 10,
-    border: "1.5px solid",
+  segmentTrack: {
+    display: "flex",
+    gap: 4,
+    marginTop: 8,
+    padding: 4,
+    background: "#f1f5f9",
+    borderRadius: 12,
+  },
+  segmentBtn: {
+    flex: 1,
+    padding: "9px 14px",
+    borderRadius: 9,
+    border: "none",
     fontSize: 13,
     cursor: "pointer",
     fontFamily: "inherit",
+    transition: "all 150ms ease",
   },
   typeHint: { marginTop: 8, fontSize: 11.5, color: "#64748b" },
 
@@ -2817,7 +3277,6 @@ const styles = {
     border: "1px solid #fecaca",
   },
 
-  // Session score
   scoreBox: {
     marginTop: 16,
     padding: 18,
@@ -2839,6 +3298,38 @@ const styles = {
     textTransform: "uppercase",
   },
   scoreBand: { fontSize: 15, fontWeight: 800, marginTop: 4 },
+  scoreBandPill: {
+    display: "inline-block",
+    marginTop: 6,
+    padding: "3px 10px",
+    borderRadius: 999,
+    fontSize: 12.5,
+    fontWeight: 800,
+  },
+  scoreSegmentTrack: {
+    display: "flex",
+    height: 10,
+    borderRadius: 999,
+    overflow: "hidden",
+    background: "#f1f5f9",
+    marginBottom: 8,
+  },
+  scoreSegment: { height: "100%" },
+  scoreLegendRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "6px 14px",
+    marginBottom: 14,
+  },
+  scoreLegendItem: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 5,
+    fontSize: 11.5,
+    color: "#64748b",
+    fontWeight: 600,
+  },
+  scoreLegendDot: { width: 8, height: 8, borderRadius: 999, flexShrink: 0 },
   scoreNumber: {
     fontSize: 44,
     fontWeight: 800,
@@ -2937,7 +3428,6 @@ const styles = {
 
   sections: { display: "flex", flexDirection: "column", gap: 18 },
 
-  // Teaching Quality Assessment
   qualitySection: {
     background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
     border: "2px solid #fcd34d",
@@ -3122,6 +3612,7 @@ const styles = {
     flex: 1,
     minWidth: 0,
   },
+  sectionPlay: { fontSize: 11, flexShrink: 0 },
   sectionDot: { width: 10, height: 10, borderRadius: 999 },
   sectionTitle: {
     margin: 0,
@@ -3154,39 +3645,85 @@ const styles = {
     gap: 8,
   },
   listItem: { margin: 0 },
-  checkRow: {
+  itemCard: {
     width: "100%",
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 12,
-    padding: "12px 14px",
+    padding: "14px 16px",
     border: "1px solid #e2e8f0",
     borderRadius: 12,
-    cursor: "pointer",
-    textAlign: "left",
-    fontFamily: "inherit",
+    background: "#ffffff",
+    boxSizing: "border-box",
   },
-  checkbox: {
+  itemHeaderRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  itemTitle: {
+    fontSize: 14.5,
+    lineHeight: 1.4,
+    fontWeight: 700,
+    color: "#0f172a",
+  },
+  requiredBadge: {
     flexShrink: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    border: "2px solid #cbd5e1",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
+    fontSize: 10.5,
+    fontWeight: 700,
+    color: "#475569",
+    background: "#f1f5f9",
+    border: "1px solid #e2e8f0",
+    padding: "2px 8px",
+    borderRadius: 999,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
   },
-  itemText: { fontSize: 14.5, lineHeight: 1.5, fontWeight: 500 },
+  itemDescription: {
+    margin: "4px 0 10px",
+    fontSize: 13,
+    lineHeight: 1.5,
+    color: "#64748b",
+  },
+  warnBox: {
+    marginTop: 10,
+    display: "flex",
+    gap: 8,
+    alignItems: "flex-start",
+    padding: "10px 12px",
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    borderRadius: 10,
+  },
+  warnIcon: { fontSize: 13, color: "#b91c1c", marginTop: 2, flexShrink: 0 },
+  warnTextarea: {
+    flex: 1,
+    minHeight: 44,
+    padding: "6px 8px",
+    borderRadius: 8,
+    border: "1px solid #fecaca",
+    background: "#ffffff",
+    fontFamily: "inherit",
+    fontSize: 12.5,
+    resize: "vertical",
+    outline: "none",
+    color: "#0f172a",
+    boxSizing: "border-box",
+  },
 
-  notesSection: {
-    marginTop: 20,
+  synthesisGroup: {
     background: "#ffffff",
     border: "1px solid #e2e8f0",
     borderRadius: 16,
-    padding: 22,
+    padding: 18,
+    flexShrink: 0,
   },
-  notesTitle: { margin: "0 0 10px", fontSize: 16, fontWeight: 700 },
+  synthesisTitle: {
+    margin: "0 0 4px",
+    fontSize: 15,
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+  notesSection: { marginTop: 18 },
+  notesTitle: { margin: "0 0 10px", fontSize: 14, fontWeight: 700 },
   textarea: {
     width: "100%",
     minHeight: 110,
@@ -3206,5 +3743,27 @@ const styles = {
     textAlign: "center",
     fontSize: 12,
     color: "#94a3b8",
+  },
+
+  stickyFooter: {
+    flexShrink: 0,
+    background: "#ffffff",
+    border: "1px solid #e2e8f0",
+    borderRadius: 14,
+    padding: 12,
+    boxShadow: "0 -8px 20px -16px rgba(15,23,42,0.15)",
+  },
+  stickyFooterBtns: { display: "flex", gap: 8 },
+  btnExport: {
+    flex: 1,
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #cbd5e1",
+    background: "#ffffff",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#334155",
+    fontFamily: "inherit",
   },
 };
