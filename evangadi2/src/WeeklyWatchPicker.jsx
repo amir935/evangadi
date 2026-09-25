@@ -202,8 +202,6 @@ export default function WeeklyWatchPicker() {
     e.target.value = "";
   };
 
-  const watchedCount = entries.filter((e) => e.watched).length;
-
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -309,17 +307,60 @@ export default function WeeklyWatchPicker() {
 
       {error && <div style={styles.errorBar}>{error}</div>}
 
-      <div style={styles.sectionHead}>
-        <span style={styles.sectionTitle}>This week</span>
-        <span style={styles.sectionCount}>
-          {watchedCount}/{entries.length} watched
-        </span>
-      </div>
-
       {loading ? (
         <div style={styles.empty}>Loading…</div>
       ) : entries.length === 0 ? (
         <div style={styles.empty}>Nobody added yet this week.</div>
+      ) : (
+        <>
+          <WatchGroup
+            title="⭐ Senior & Good"
+            hint="One watch a week is enough for these."
+            entries={entries.filter((e) => isSenior(e.tutorName))}
+            isSenior={isSenior}
+            markingSenior={markingSenior}
+            onMarkSenior={markSenior}
+            onToggleWatched={toggleWatched}
+            onRemove={removeEntry}
+          />
+          <WatchGroup
+            title="New tutors & flagged students"
+            hint="Everyone else — watch as usual, or mark them Senior & Good once they've proven out."
+            entries={entries.filter((e) => !isSenior(e.tutorName))}
+            isSenior={isSenior}
+            markingSenior={markingSenior}
+            onMarkSenior={markSenior}
+            onToggleWatched={toggleWatched}
+            onRemove={removeEntry}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function WatchGroup({
+  title,
+  hint,
+  entries,
+  isSenior,
+  markingSenior,
+  onMarkSenior,
+  onToggleWatched,
+  onRemove,
+}) {
+  const watchedCount = entries.filter((e) => e.watched).length;
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={styles.sectionHead}>
+        <span style={styles.sectionTitle}>{title}</span>
+        <span style={styles.sectionCount}>
+          {watchedCount}/{entries.length} watched
+        </span>
+      </div>
+      {hint && entries.length > 0 && <p style={styles.hint}>{hint}</p>}
+      {entries.length === 0 ? (
+        <div style={styles.empty}>Nobody here yet.</div>
       ) : (
         <div style={styles.list}>
           {entries.map((e) => (
@@ -337,7 +378,7 @@ export default function WeeklyWatchPicker() {
                 <button
                   style={styles.promoteBtn}
                   disabled={markingSenior === e.tutorName}
-                  onClick={() => markSenior(e.tutorName)}
+                  onClick={() => onMarkSenior(e.tutorName)}
                   title={`Good session? Mark ${e.tutorName} Senior & Good`}
                 >
                   {markingSenior === e.tutorName
@@ -349,13 +390,13 @@ export default function WeeklyWatchPicker() {
                 <input
                   type="checkbox"
                   checked={!!e.watched}
-                  onChange={() => toggleWatched(e)}
+                  onChange={() => onToggleWatched(e)}
                 />
                 {e.watched ? "Watched ✅" : "Mark as watched"}
               </label>
               <button
                 style={styles.removeBtn}
-                onClick={() => removeEntry(e)}
+                onClick={() => onRemove(e)}
                 title="Remove"
               >
                 🗑️
