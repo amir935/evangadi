@@ -38,16 +38,17 @@ router.post("/mark-senior-tutor", async (req, res) => {
 });
 
 // GET /api/new-student-watches/:weekKey — this week's watch list. Every
-// Senior & Good tutor is auto-seeded a row here if they don't already have
-// one for this week, so tagging a tutor once is enough — no manual re-add
-// needed every week.
+// active tutor in the roster is auto-seeded a row here if they don't
+// already have one for this week, so the roster is the source of truth —
+// no manual re-add needed every week. Senior & Good ones just get flagged
+// with a star by the frontend; everyone else lands in the plain section.
 router.get("/:weekKey", async (req, res) => {
   const { weekKey } = req.params;
 
-  const [seniorRows] = await pool.query(
-    "SELECT name FROM tutor_profiles WHERE senior_good = 1 AND active = 1",
+  const [rosterRows] = await pool.query(
+    "SELECT name FROM tutor_profiles WHERE active = 1",
   );
-  if (seniorRows.length) {
+  if (rosterRows.length) {
     const [existingRows] = await pool.query(
       "SELECT DISTINCT tutor_name FROM new_student_watches WHERE week_key = ?",
       [weekKey],
@@ -55,7 +56,7 @@ router.get("/:weekKey", async (req, res) => {
     const existingNames = new Set(
       existingRows.map((r) => r.tutor_name.toLowerCase()),
     );
-    const missing = seniorRows
+    const missing = rosterRows
       .map((r) => r.name)
       .filter((name) => !existingNames.has(name.toLowerCase()));
     for (const name of missing) {
