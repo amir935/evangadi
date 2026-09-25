@@ -17,6 +17,7 @@ const expectationsRoutes = require("./routes/expectations");
 const tutorGroupsRoutes = require("./routes/tutorGroups");
 const adminRoutes = require("./routes/admin");
 const rosterRoutes = require("./routes/roster");
+const newStudentWatchesRoutes = require("./routes/newStudentWatches");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
@@ -96,6 +97,12 @@ app.use(
   authRequired,
   requireRole("admin", "coordinator"),
   rosterRoutes,
+);
+app.use(
+  "/api/new-student-watches",
+  authRequired,
+  requireRole("admin", "coordinator", "video_reviewer", "reviewer"),
+  newStudentWatchesRoutes,
 );
 
 app.use("/api", (_req, res) =>

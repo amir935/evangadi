@@ -9,7 +9,7 @@ const router = express.Router();
 // GET /api/roster/tutors — list all tutor profiles, with a live count of their roster students
 router.get("/tutors", async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT tp.id, tp.name, tp.phone, tp.email, tp.notes, tp.active, tp.created_at,
+    SELECT tp.id, tp.name, tp.phone, tp.email, tp.notes, tp.active, tp.senior_good, tp.created_at,
            COUNT(sp.id) AS studentCount
     FROM tutor_profiles tp
     LEFT JOIN student_profiles sp ON sp.tutor_profile_id = tp.id AND sp.active = 1
@@ -20,6 +20,8 @@ router.get("/tutors", async (req, res) => {
     rows.map((r) => ({
       ...r,
       active: !!r.active,
+      seniorGood: !!r.senior_good,
+      senior_good: undefined,
       studentCount: Number(r.studentCount),
     })),
   );
@@ -43,6 +45,7 @@ router.post("/tutors", async (req, res) => {
         email,
         notes,
         active: true,
+        seniorGood: false,
         studentCount: 0,
       });
   } catch (err) {
@@ -56,7 +59,7 @@ router.post("/tutors", async (req, res) => {
 
 // PATCH /api/roster/tutors/:id
 router.patch("/tutors/:id", async (req, res) => {
-  const { name, phone, email, notes, active } = req.body || {};
+  const { name, phone, email, notes, active, seniorGood } = req.body || {};
   const sets = [];
   const vals = [];
   if (name !== undefined) {
@@ -78,6 +81,10 @@ router.patch("/tutors/:id", async (req, res) => {
   if (active !== undefined) {
     sets.push("active = ?");
     vals.push(active ? 1 : 0);
+  }
+  if (seniorGood !== undefined) {
+    sets.push("senior_good = ?");
+    vals.push(seniorGood ? 1 : 0);
   }
   if (sets.length === 0) return res.json({ ok: true });
   vals.push(req.params.id);

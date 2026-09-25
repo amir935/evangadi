@@ -1224,6 +1224,19 @@ const VideoReviewChecklist = forwardRef(function VideoReviewChecklist(
   const [loadingPast, setLoadingPast] = useState(false);
   const [showPast, setShowPast] = useState(false);
 
+  // Tutors flagged "Senior & Good" in the roster — only need one watch a
+  // week, so remind the reviewer right where they type the tutor's name.
+  const [seniorTutors, setSeniorTutors] = useState([]);
+  useEffect(() => {
+    api
+      .getSeniorTutors()
+      .then(setSeniorTutors)
+      .catch(() => {});
+  }, []);
+  const isSeniorGoodTutor = seniorTutors.some(
+    (n) => n.toLowerCase() === tutorName.trim().toLowerCase(),
+  );
+
   useEffect(() => {
     setTutorName(initialTutor);
   }, [initialTutor]);
@@ -2055,6 +2068,12 @@ const VideoReviewChecklist = forwardRef(function VideoReviewChecklist(
                   placeholder="Tutor name"
                   style={styles.metaInput}
                 />
+                {isSeniorGoodTutor && (
+                  <span style={styles.seniorHint}>
+                    ⭐ Senior & Good — only their latest session this week
+                    needs a full review
+                  </span>
+                )}
               </label>
               <label style={styles.metaLabel}>
                 <span style={styles.metaLabelText}>Student</span>
@@ -3147,6 +3166,15 @@ const styles = {
     fontFamily: "inherit",
     color: "#0f172a",
     background: "#ffffff",
+  },
+  seniorHint: {
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: "#92400e",
+    background: "#fef3c7",
+    padding: "5px 9px",
+    borderRadius: 8,
+    lineHeight: 1.4,
   },
 
   segmentTrack: {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "./AuthContext";
 import api from "./api";
+import { parseImportText, truthy } from "./importUtils";
 
 const ROLE_INFO = {
   admin: { label: "Admin", color: "#dc2626", bg: "#fee2e2", icon: "👑" },
@@ -642,6 +643,9 @@ function TutorRosterSection({ flash }) {
   });
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [showJsonImport, setShowJsonImport] = useState(false);
+  const [jsonText, setJsonText] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -651,6 +655,60 @@ function TutorRosterSection({ flash }) {
       .catch(() => flash("Failed to load tutors"))
       .finally(() => setLoading(false));
   }, []);
+
+  const importJson = async () => {
+    let items;
+    try {
+      items = parseImportText(jsonText);
+    } catch {
+      flash("Couldn't parse that as JSON or CSV — check the format");
+      return;
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      flash("Nothing to import — paste an array of tutors");
+      return;
+    }
+    setImporting(true);
+    let added = 0;
+    let skipped = 0;
+    for (const item of items) {
+      const entry = typeof item === "string" ? { name: item } : item || {};
+      const name = entry.name || entry.tutorName || entry.tutor;
+      if (!name || !String(name).trim()) {
+        skipped++;
+        continue;
+      }
+      try {
+        const created = await api.createTutorProfile({
+          name: String(name).trim(),
+          phone: entry.phone || "",
+          email: entry.email || "",
+          notes: entry.notes || entry.note || "",
+        });
+        if (truthy(entry.seniorGood)) {
+          await api.updateTutorProfile(created.id, { seniorGood: true });
+        }
+        added++;
+      } catch {
+        skipped++;
+      }
+    }
+    setImporting(false);
+    setJsonText("");
+    flash(
+      `Imported ${added} tutor${added === 1 ? "" : "s"}${skipped ? `, skipped ${skipped}` : ""}`,
+    );
+    load();
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setJsonText(String(reader.result || ""));
+    reader.readAsText(file);
+    e.target.value = "";
+  };
   useEffect(() => {
     load();
   }, [load]);
@@ -674,6 +732,20 @@ function TutorRosterSection({ flash }) {
     try {
       await api.updateTutorProfile(t.id, { active: !t.active });
       flash(t.active ? `${t.name} marked inactive` : `${t.name} marked active`);
+      load();
+    } catch (err) {
+      flash(err.message || "Failed");
+    }
+  };
+
+  const toggleSeniorGood = async (t) => {
+    try {
+      await api.updateTutorProfile(t.id, { seniorGood: !t.seniorGood });
+      flash(
+        t.seniorGood
+          ? `${t.name} unmarked as Senior & Good`
+          : `${t.name} marked Senior & Good — the Weekly Watch Picker will suggest their latest session only`,
+      );
       load();
     } catch (err) {
       flash(err.message || "Failed");
@@ -759,6 +831,44 @@ function TutorRosterSection({ flash }) {
         </button>
       </div>
 
+      <button
+        style={styles.jsonToggleBtn}
+        onClick={() => setShowJsonImport((v) => !v)}
+      >
+        {showJsonImport ? "▾" : "▸"} 📋 Bulk import from JSON or CSV
+      </button>
+      {showJsonImport && (
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>📋 Bulk Import (JSON or CSV)</div>
+          <p style={styles.jsonHint}>
+            Paste a JSON array — either{" "}
+            <code>{`[{"name":"Jane Doe","phone":"...","seniorGood":true}]`}</code>{" "}
+            or just <code>{`["Jane Doe","John Smith"]`}</code> — or paste/upload
+            a CSV with a header row like <code>name,phone,email,notes</code>.
+          </p>
+          <input
+            type="file"
+            accept=".json,.csv,application/json,text/csv"
+            onChange={handleFileUpload}
+            style={{ marginBottom: 10, fontSize: 12.5 }}
+          />
+          <textarea
+            style={styles.jsonTextarea}
+            rows={6}
+            value={jsonText}
+            onChange={(e) => setJsonText(e.target.value)}
+            placeholder='[{"name":"Jane Doe"}]  or  name,phone&#10;Jane Doe,555-1234'
+          />
+          <button
+            style={styles.btnPrimary}
+            disabled={importing || !jsonText.trim()}
+            onClick={importJson}
+          >
+            {importing ? "Importing…" : "Import"}
+          </button>
+        </div>
+      )}
+
       <input
         style={{ ...styles.input, marginBottom: 14, maxWidth: 300 }}
         placeholder="🔍 Search tutors…"
@@ -827,6 +937,9 @@ function TutorRosterSection({ flash }) {
                       {!t.active && (
                         <span style={styles.inactiveTag}>inactive</span>
                       )}
+                      {t.seniorGood && (
+                        <span style={styles.seniorGoodTag}>⭐ Senior & Good</span>
+                      )}
                     </div>
                     <div style={styles.rowMeta}>
                       {t.phone && <span>📞 {t.phone}</span>}
@@ -866,6 +979,17 @@ function TutorRosterSection({ flash }) {
                       title="Edit"
                     >
                       ✏️
+                    </button>
+                    <button
+                      style={styles.iconActionBtn}
+                      onClick={() => toggleSeniorGood(t)}
+                      title={
+                        t.seniorGood
+                          ? "Unmark Senior & Good"
+                          : "Mark Senior & Good — Weekly Watch Picker will suggest only their latest session"
+                      }
+                    >
+                      {t.seniorGood ? "⭐" : "☆"}
                     </button>
                     <button
                       style={styles.iconActionBtn}
@@ -1590,6 +1714,37 @@ const styles = {
     outline: "none",
     background: "#fff",
   },
+  jsonToggleBtn: {
+    display: "block",
+    border: "none",
+    background: "transparent",
+    color: "#2563eb",
+    fontSize: 12.5,
+    fontWeight: 700,
+    cursor: "pointer",
+    padding: "0 0 14px",
+    fontFamily: "inherit",
+  },
+  jsonHint: {
+    fontSize: 12,
+    color: "#64748b",
+    margin: "0 0 10px",
+    lineHeight: 1.5,
+  },
+  jsonTextarea: {
+    width: "100%",
+    padding: "9px 12px",
+    borderRadius: 9,
+    border: "1px solid #e2e8f0",
+    fontSize: 12.5,
+    fontFamily: "'SF Mono', Consolas, monospace",
+    color: "#0f172a",
+    outline: "none",
+    background: "#fff",
+    marginBottom: 10,
+    boxSizing: "border-box",
+    resize: "vertical",
+  },
   btnPrimary: {
     padding: "9px 18px",
     borderRadius: 10,
@@ -1719,6 +1874,15 @@ const styles = {
     borderRadius: 999,
     marginLeft: 6,
     textTransform: "uppercase",
+  },
+  seniorGoodTag: {
+    fontSize: 9.5,
+    fontWeight: 700,
+    color: "#92400e",
+    background: "#fef3c7",
+    padding: "2px 7px",
+    borderRadius: 999,
+    marginLeft: 6,
   },
   youTag: {
     fontSize: 9.5,

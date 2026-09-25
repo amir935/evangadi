@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./AuthContext";
 import Login from "./Login";
 import WeeklySchedule from "./WeeklySchedule";
 import VideoReviewChecklist from "./VideoReviewChecklist";
+import WeeklyWatchPicker from "./WeeklyWatchPicker";
 import AdminPanel from "./AdminPanel";
 import AccountMenu from "./AccountMenu";
 import AuditorShell from "./AuditorShell";
@@ -22,6 +23,7 @@ const ROLE_BADGE = {
 const NAV_TABS = [
   { id: "schedule", label: "Schedule", icon: "📅" },
   { id: "review", label: "Video Review", icon: "🎬" },
+  { id: "watch", label: "Weekly Watch", icon: "⭐" },
   { id: "report", label: "Audio Report", icon: "📊" },
   { id: "admin", label: "Admin", icon: "⚙️" },
 ];
@@ -31,6 +33,7 @@ const NAV_TABS = [
 const TAB_ACCESS = {
   schedule: ["admin", "coordinator"],
   review: ["admin", "coordinator", "video_reviewer", "reviewer"],
+  watch: ["admin", "coordinator", "video_reviewer", "reviewer"],
   report: ["admin", "coordinator", "audio_reporter", "reviewer"],
   admin: ["admin"],
 };
@@ -196,6 +199,7 @@ function Shell() {
           onExitReport={canSchedule ? () => setActiveTab("schedule") : undefined}
         />
       )}
+      {hasAnyTab && tab === "watch" && <WeeklyWatchPicker />}
       {hasAnyTab && tab === "admin" && <AdminPanel />}
       {!hasAnyTab && <RestrictedHome user={user} />}
     </div>

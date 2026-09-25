@@ -51,10 +51,21 @@ async function initSchema() {
         email       VARCHAR(190),
         notes       TEXT,
         active      TINYINT(1) NOT NULL DEFAULT 1,
+        senior_good TINYINT(1) NOT NULL DEFAULT 0,
         created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_tutor_profile_name (name)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Migration: add senior_good column if the table predates it
+    try {
+      await conn.query(
+        "ALTER TABLE tutor_profiles ADD COLUMN senior_good TINYINT(1) NOT NULL DEFAULT 0",
+      );
+      console.log("Added senior_good column to tutor_profiles");
+    } catch (e) {
+      /* already exists */
+    }
 
     // Master roster — persistent student identity, independent of any single week's schedule
     await conn.query(`
@@ -80,6 +91,15 @@ async function initSchema() {
         position   INT NOT NULL DEFAULT 0,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_tutors_week_day (week_key, day_id, position)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // Weeks the user explicitly cleared — prevents GET /api/schedule/:weekKey
+    // from auto-copying forward into a week that was emptied on purpose.
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS schedule_cleared_weeks (
+        week_key   VARCHAR(20) PRIMARY KEY,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
@@ -313,6 +333,33 @@ async function initSchema() {
         FOREIGN KEY (group_id) REFERENCES tutor_groups(id) ON DELETE CASCADE
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Weekly Watch List — one simple per-week checklist: tutor + optional
+    // student + optional note, checked off once watched. Senior & Good
+    // tutors (tutor_profiles.senior_good) are flagged automatically in the
+    // UI, not stored per-row here.
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS new_student_watches (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        week_key     VARCHAR(20) NOT NULL,
+        tutor_name   VARCHAR(190) NOT NULL,
+        student_name VARCHAR(190) NULL,
+        note         TEXT,
+        watched      TINYINT(1) NOT NULL DEFAULT 0,
+        created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_new_student_watches_week (week_key)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // Migration: relax student_name to nullable if the table predates it —
+    // a watch entry doesn't always need a specific student.
+    try {
+      await conn.query(
+        "ALTER TABLE new_student_watches MODIFY COLUMN student_name VARCHAR(190) NULL",
+      );
+    } catch (e) {
+      /* already nullable / table doesn't exist yet */
+    }
 
     // Seed sample data only on first run
     const [[{ c }]] = await conn.query("SELECT COUNT(*) AS c FROM tutors");

@@ -274,6 +274,30 @@ export const api = {
 
   getRosterDashboard: () => request(`/api/roster/dashboard`),
 
+  // Weekly Watch List — one per-week checklist of tutor (+ optional
+  // student, + optional note); Senior & Good tutors are flagged via the
+  // roster tag, read here without needing full roster access.
+  getSeniorTutors: () => request(`/api/new-student-watches/senior-tutors`),
+  getNewStudentWatches: (weekKey) =>
+    request(`/api/new-student-watches/${weekKey}`),
+  addNewStudentWatch: (weekKey, tutorName, studentName, note) =>
+    request(`/api/new-student-watches/${weekKey}`, {
+      method: "POST",
+      body: JSON.stringify({ tutorName, studentName, note }),
+    }),
+  setNewStudentWatched: (id, watched) =>
+    request(`/api/new-student-watches/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ watched }),
+    }),
+  deleteNewStudentWatch: (id) =>
+    request(`/api/new-student-watches/${id}`, { method: "DELETE" }),
+  markTutorSeniorGood: (tutorName) =>
+    request(`/api/new-student-watches/mark-senior-tutor`, {
+      method: "POST",
+      body: JSON.stringify({ tutorName }),
+    }),
+
   // Admin — status breakdown for a given week (schedule + audio)
   getWeekStatus: (weekKey) => request(`/api/admin/week-status/${weekKey}`),
 

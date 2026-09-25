@@ -9,6 +9,7 @@ import AccountMenu from "./AccountMenu";
 const NAV_ITEMS = [
   { label: "Executive Dashboard", icon: "📊", targetTab: "admin" },
   { label: "Auditor Center", icon: "🎬", targetTab: "review" },
+  { label: "Weekly Watch", icon: "⭐", targetTab: "watch" },
   { label: "Tutor Growth", icon: "📈", targetTab: null },
   { label: "Review Queue", icon: "🗂️", targetTab: "report" },
   { label: "Settings", icon: "⚙️", targetTab: "admin" },
