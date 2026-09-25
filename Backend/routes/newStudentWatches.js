@@ -37,11 +37,38 @@ router.post("/mark-senior-tutor", async (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/new-student-watches/:weekKey — this week's watch list
+// GET /api/new-student-watches/:weekKey — this week's watch list. Every
+// Senior & Good tutor is auto-seeded a row here if they don't already have
+// one for this week, so tagging a tutor once is enough — no manual re-add
+// needed every week.
 router.get("/:weekKey", async (req, res) => {
+  const { weekKey } = req.params;
+
+  const [seniorRows] = await pool.query(
+    "SELECT name FROM tutor_profiles WHERE senior_good = 1 AND active = 1",
+  );
+  if (seniorRows.length) {
+    const [existingRows] = await pool.query(
+      "SELECT DISTINCT tutor_name FROM new_student_watches WHERE week_key = ?",
+      [weekKey],
+    );
+    const existingNames = new Set(
+      existingRows.map((r) => r.tutor_name.toLowerCase()),
+    );
+    const missing = seniorRows
+      .map((r) => r.name)
+      .filter((name) => !existingNames.has(name.toLowerCase()));
+    for (const name of missing) {
+      await pool.query(
+        "INSERT INTO new_student_watches (week_key, tutor_name) VALUES (?, ?)",
+        [weekKey, name],
+      );
+    }
+  }
+
   const [rows] = await pool.query(
     `SELECT ${SELECT_FIELDS} FROM new_student_watches WHERE week_key = ? ORDER BY created_at ASC`,
-    [req.params.weekKey],
+    [weekKey],
   );
   res.json(rows.map((r) => ({ ...r, watched: !!r.watched })));
 });
