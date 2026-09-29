@@ -1943,14 +1943,10 @@ export default function WeeklySchedule() {
     try {
       const created = [];
       let stoppedSkipped = 0;
-      let cancelledSkipped = 0;
       let failed = 0;
       for (const entry of reportManualEntries) {
-        // Skip cancelled sessions — no point carrying a cancelled slot forward
-        if (entry.status === "cancelled") {
-          cancelledSkipped++;
-          continue;
-        }
+        // Cancelled sessions still carry forward — a cancellation is a one-week
+        // event (e.g. holiday), not the end of the slot, so next week resets to Pending.
 
         // Skip any session with a stop date set at all — once a student has a
         // known end date, don't perpetuate their slot into future weeks.
@@ -1990,7 +1986,6 @@ export default function WeeklySchedule() {
         }
       }
       const skipNotes = [];
-      if (cancelledSkipped > 0) skipNotes.push(`${cancelledSkipped} cancelled`);
       if (stoppedSkipped > 0) skipNotes.push(`${stoppedSkipped} student stopped`);
       if (failed > 0) skipNotes.push(`${failed} failed`);
       flash(
