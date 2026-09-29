@@ -205,6 +205,8 @@ export const api = {
     audioFilename,
     sessionTime,
     materialStatus,
+    isAssessment,
+    endDate,
   ) =>
     request(`/api/manual-entries/${weekKey}`, {
       method: "POST",
@@ -216,6 +218,8 @@ export const api = {
         audioFilename,
         sessionTime,
         materialStatus,
+        isAssessment,
+        endDate,
       }),
     }),
   patchManualEntry: (id, fields) =>
@@ -225,6 +229,9 @@ export const api = {
     }),
   deleteManualEntry: (id) =>
     request(`/api/manual-entries/${id}`, { method: "DELETE" }),
+  // Clear every Audio Report entry in one week only
+  clearManualEntriesWeek: (weekKey) =>
+    request(`/api/manual-entries/week/${weekKey}`, { method: "DELETE" }),
   // Delete ALL manual entries across every week (destructive).
   clearAllManualEntries: () =>
     request(`/api/manual-entries`, { method: "DELETE" }),

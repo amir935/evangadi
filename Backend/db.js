@@ -295,6 +295,28 @@ async function initSchema() {
       /* already exists */
     }
 
+    // Migration: tag a session as an initial assessment class — these are excluded
+    // from all Audio Report metrics (sent/missed/review time/material), since audio
+    // isn't reviewed for assessment sessions.
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN is_assessment TINYINT(1) NOT NULL DEFAULT 0",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+
+    // Migration: the date a student stopped tutoring. Sessions in the Audio Report
+    // dated after this are excluded from missed/sent/review-time metrics (the student
+    // is gone, no audio is expected), and aren't carried forward when copying to next week.
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN end_date DATE DEFAULT NULL",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+
     // Permanent tutor expectations (default min sessions/days per week)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS tutor_expectations (

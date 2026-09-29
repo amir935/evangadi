@@ -170,6 +170,16 @@ const countsAsSent = (e) =>
   e.status === "reviewed" ||
   (e.status === "rescheduled" && !!e.makeupDay);
 
+// Average time it takes to review one student's audio submission.
+const AUDIO_REVIEW_MINUTES = 20;
+function formatDuration(totalMinutes) {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
 const TUTOR_COLORS = [
   { color: "#0891b2", bg: "#cffafe" },
   { color: "#d97706", bg: "#fef3c7" },
@@ -628,6 +638,36 @@ function CalendarGridView({
                                               entry.makeupDay}
                                           </span>
                                         )}
+                                        {entry.isAssessment && (
+                                          <span
+                                            title="Initial assessment — excluded from audio report metrics"
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 800,
+                                              color: "#7c3aed",
+                                              background: "#f3e8ff",
+                                              padding: "1px 5px",
+                                              borderRadius: 999,
+                                            }}
+                                          >
+                                            🎓 assessment
+                                          </span>
+                                        )}
+                                        {entry.endDate && (
+                                          <span
+                                            title={`Student stops ${entry.endDate}`}
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 800,
+                                              color: "#b91c1c",
+                                              background: "#fee2e2",
+                                              padding: "1px 5px",
+                                              borderRadius: 999,
+                                            }}
+                                          >
+                                            🛑 {entry.endDate}
+                                          </span>
+                                        )}
                                       </div>
                                     </button>
                                     <button
@@ -951,6 +991,8 @@ export default function WeeklySchedule() {
     audioFilename: "",
     groupId: "",
     sessionTime: "",
+    isAssessment: false,
+    endDate: "",
   });
   const [editingExpectation, setEditingExpectation] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null); // { id, tutorName, studentName, dayId, status, audioFilename }
@@ -1054,6 +1096,8 @@ export default function WeeklySchedule() {
       audioFilename,
       groupId,
       sessionTime,
+      isAssessment,
+      endDate,
     } = manualForm;
     if (!tutorName.trim() || !studentName.trim()) {
       flash("Enter tutor and student name");
@@ -1075,6 +1119,9 @@ export default function WeeklySchedule() {
         effectiveStatus,
         audioFilename.trim(),
         sessionTimeISO,
+        undefined,
+        isAssessment,
+        endDate || null,
       );
       setReportManualEntries((p) => [...p, entry]);
       if (groupId && !getTutorGroup(tutorName.trim())) {
@@ -1085,6 +1132,8 @@ export default function WeeklySchedule() {
         studentName: "",
         audioFilename: "",
         sessionTime: "",
+        isAssessment: false,
+        endDate: "",
       }));
       flash("Entry added");
     } catch (err) {
@@ -1131,6 +1180,9 @@ export default function WeeklySchedule() {
         "pending",
         src.audioFilename || "",
         newSessionTime,
+        undefined,
+        src.isAssessment,
+        src.endDate || null,
       );
       setReportManualEntries((p) => [...p, entry]);
       flash(`Pasted ${src.studentName}'s session`);
@@ -1170,6 +1222,9 @@ export default function WeeklySchedule() {
         "pending",
         "",
         entry.sessionTime || null,
+        undefined,
+        entry.isAssessment,
+        entry.endDate || null,
       );
       setReportManualEntries((p) => [...p, newEntry]);
       flash("Duplicated session");
@@ -1192,7 +1247,7 @@ export default function WeeklySchedule() {
       const isSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
       const isCancelled = entry.status === "cancelled";
-      if (isSent || isAbsent || isCancelled) return;
+      if (isSent || isAbsent || isCancelled || entry.isAssessment) return;
 
       const day = DAYS.find((d) => d.id === entry.dayId);
       if (!day) return;
@@ -1203,6 +1258,7 @@ export default function WeeklySchedule() {
       const sessionDateStr = fmtISO(sessionDate);
       const todayDateStr = fmtISO(now);
       if (sessionDateStr >= todayDateStr) return; // skip today's and future sessions
+      if (entry.endDate && sessionDateStr > entry.endDate) return; // student already stopped
 
       if (!tutorMap[entry.tutorName]) tutorMap[entry.tutorName] = [];
       tutorMap[entry.tutorName].push({ ...entry, day });
@@ -1886,9 +1942,22 @@ export default function WeeklySchedule() {
     setReportLoading(true);
     try {
       const created = [];
+      let stoppedSkipped = 0;
+      let cancelledSkipped = 0;
+      let failed = 0;
       for (const entry of reportManualEntries) {
         // Skip cancelled sessions — no point carrying a cancelled slot forward
-        if (entry.status === "cancelled") continue;
+        if (entry.status === "cancelled") {
+          cancelledSkipped++;
+          continue;
+        }
+
+        // Skip any session with a stop date set at all — once a student has a
+        // known end date, don't perpetuate their slot into future weeks.
+        if (entry.endDate) {
+          stoppedSkipped++;
+          continue;
+        }
 
         let newSessionTime = null;
         if (entry.sessionTime) {
@@ -1896,19 +1965,37 @@ export default function WeeklySchedule() {
           newSessionTime = addDays(t, 7).toISOString();
         }
 
-        const newEntry = await api.addManualEntry(
-          nextKey,
-          entry.tutorName,
-          entry.studentName,
-          entry.dayId,
-          "pending",
-          "",
-          newSessionTime,
-        );
-        created.push(newEntry);
+        // One bad entry shouldn't block the rest of the batch — catch per-entry
+        // so a single failure doesn't silently abort everything after it.
+        try {
+          const newEntry = await api.addManualEntry(
+            nextKey,
+            entry.tutorName,
+            entry.studentName,
+            entry.dayId,
+            "pending",
+            "",
+            newSessionTime,
+            undefined,
+            false,
+            entry.endDate || null,
+          );
+          created.push(newEntry);
+        } catch (entryErr) {
+          failed++;
+          console.error(
+            `Failed to copy ${entry.studentName}'s session:`,
+            entryErr,
+          );
+        }
       }
+      const skipNotes = [];
+      if (cancelledSkipped > 0) skipNotes.push(`${cancelledSkipped} cancelled`);
+      if (stoppedSkipped > 0) skipNotes.push(`${stoppedSkipped} student stopped`);
+      if (failed > 0) skipNotes.push(`${failed} failed`);
       flash(
-        `Copied ${created.length} session${created.length !== 1 ? "s" : ""} to next week — all set to Pending`,
+        `Copied ${created.length} session${created.length !== 1 ? "s" : ""} to next week — all set to Pending` +
+          (skipNotes.length > 0 ? ` (skipped: ${skipNotes.join(", ")})` : ""),
       );
       // Jump to next week so the user can see the result immediately
       setReportWeekMonday(nextMonday);
@@ -1920,6 +2007,31 @@ export default function WeeklySchedule() {
       setReportLoading(false);
     }
   };
+
+  // Clear every Audio Report entry in the currently viewed week only
+  const clearAudioReportWeek = async () => {
+    if (reportManualEntries.length === 0) {
+      flash("Nothing to clear — this week is already empty");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Clear ALL ${reportManualEntries.length} session${reportManualEntries.length !== 1 ? "s" : ""} from this week's Audio Report? This cannot be undone.`,
+      )
+    )
+      return;
+    setReportLoading(true);
+    try {
+      await api.clearManualEntriesWeek(reportWKey);
+      setReportManualEntries([]);
+      flash("Cleared this week's Audio Report");
+    } catch (err) {
+      flash(err.message || "Failed to clear week");
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   const loadBiweeklySummary = async (startDateStr) => {
     if (!startDateStr) return;
     setBiweeklyLoading(true);
@@ -2023,6 +2135,8 @@ export default function WeeklySchedule() {
       status,
       audioFilename,
       sessionTime,
+      isAssessment,
+      endDate,
     } = editingEntry;
     // Safety net: a filename with status still left on "pending" is almost certainly an oversight.
     const effectiveStatus =
@@ -2035,6 +2149,8 @@ export default function WeeklySchedule() {
         status: effectiveStatus,
         audioFilename,
         sessionTime,
+        isAssessment,
+        endDate: endDate || null,
       });
       setReportManualEntries((p) =>
         p.map((e) =>
@@ -2127,6 +2243,10 @@ export default function WeeklySchedule() {
       const isToday = dayDateISO === todayISO;
       const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
+      const isCancelled = entry.status === "cancelled";
+      const isAssessment = !!entry.isAssessment;
+      // The student already stopped tutoring by this session's date — nothing to review.
+      const isPastEnd = !!(entry.endDate && dayDateISO > entry.endDate);
 
       if (!tutorMap[entry.tutorName]) {
         tutorMap[entry.tutorName] = {
@@ -2140,7 +2260,10 @@ export default function WeeklySchedule() {
       }
       const e = tutorMap[entry.tutorName];
 
-      if (!isAbsent) {
+      // Assessment sessions aren't reviewed for audio, cancelled sessions never
+      // happened, and sessions after a student's stop date shouldn't exist —
+      // none of these count toward sent/missed/upcoming totals.
+      if (!isAbsent && !isAssessment && !isCancelled && !isPastEnd) {
         e.totalSessions++;
         if (audioSent) e.sentSessions++;
         else if (isPast) e.missedSessions++;
@@ -2151,8 +2274,9 @@ export default function WeeklySchedule() {
       let dayEntry = e.byDay.find((d) => d.dayId === entry.dayId);
       if (!dayEntry) {
         let dayStatus = "upcoming";
-        if (isPast) dayStatus = audioSent ? "complete" : "missed";
-        else if (isToday) dayStatus = audioSent ? "complete" : "today";
+        const skipsMissed = audioSent || isAssessment || isCancelled || isPastEnd;
+        if (isPast) dayStatus = skipsMissed ? "complete" : "missed";
+        else if (isToday) dayStatus = skipsMissed ? "complete" : "today";
         dayEntry = {
           dayId: day.id,
           dayShort: day.short,
@@ -2175,19 +2299,24 @@ export default function WeeklySchedule() {
         e.byDay.push(dayEntry);
       }
 
-      // Update day status based on all sessions
+      // Update day status based on all sessions — assessment/cancelled/stopped
+      // sessions are excluded since none of them are expected to have audio reviewed.
       if (!isAbsent && isPast) {
-        const allSent = [...dayEntry.sessions, { audioSent }].every(
-          (s) => s.audioSent,
-        );
-        const someSent = [...dayEntry.sessions, { audioSent }].some(
-          (s) => s.audioSent,
-        );
-        dayEntry.dayStatus = allSent
-          ? "complete"
-          : someSent
-            ? "partial"
-            : "missed";
+        const relevant = [
+          ...dayEntry.sessions,
+          { audioSent, isAssessment, isCancelled, isPastEnd },
+        ].filter((s) => !s.isAssessment && !s.isCancelled && !s.isPastEnd);
+        if (relevant.length === 0) {
+          dayEntry.dayStatus = "complete";
+        } else {
+          const allSent = relevant.every((s) => s.audioSent);
+          const someSent = relevant.some((s) => s.audioSent);
+          dayEntry.dayStatus = allSent
+            ? "complete"
+            : someSent
+              ? "partial"
+              : "missed";
+        }
       }
 
       if (isAbsent) {
@@ -2201,7 +2330,12 @@ export default function WeeklySchedule() {
           studentName: entry.studentName,
           status: entry.status,
           audioSent,
-          isMissed: isPast && !audioSent,
+          isAssessment,
+          isCancelled,
+          isPastEnd,
+          endDate: entry.endDate || null,
+          isMissed:
+            isPast && !audioSent && !isAssessment && !isCancelled && !isPastEnd,
           isUpcoming: (isToday || !isPast) && !audioSent,
           manualId: entry.id,
         });
@@ -2221,7 +2355,10 @@ export default function WeeklySchedule() {
       tutorsWithMissed = 0;
     let materialSent = 0,
       materialNone = 0,
-      materialUnanswered = 0;
+      materialUnanswered = 0,
+      assessmentCount = 0,
+      cancelledCount = 0,
+      stoppedCount = 0;
     tutors.forEach((t) => {
       totalSessions += t.totalSessions;
       sent += t.sentSessions;
@@ -2230,7 +2367,22 @@ export default function WeeklySchedule() {
       if (t.missedSessions > 0) tutorsWithMissed++;
     });
     reportManualEntries.forEach((entry) => {
-      if (entry.status === "absent" || entry.status === "cancelled") return;
+      const day = DAYS.find((d) => d.id === entry.dayId);
+      const dayDateISO = day ? fmtISO(addDays(reportWeekMonday, day.offset)) : "";
+      const isPastEnd = !!(entry.endDate && dayDateISO > entry.endDate);
+      if (isPastEnd) {
+        stoppedCount++;
+        return;
+      }
+      if (entry.isAssessment) {
+        assessmentCount++;
+        return;
+      }
+      if (entry.status === "cancelled") {
+        cancelledCount++;
+        return;
+      }
+      if (entry.status === "absent") return;
       const ms = entry.materialStatus || "unanswered";
       if (ms === "sent") materialSent++;
       else if (ms === "none") materialNone++;
@@ -2247,6 +2399,9 @@ export default function WeeklySchedule() {
       materialSent,
       materialNone,
       materialUnanswered,
+      cancelledCount,
+      assessmentCount,
+      stoppedCount,
     };
   }, [
     reportManualEntries,
@@ -2255,6 +2410,40 @@ export default function WeeklySchedule() {
     reportDayNotes,
     reportAudioReceived,
   ]);
+
+  /**
+   * Per-student review time: how many sessions were reviewed for each student
+   * this week, and the resulting time spent (sessions × AUDIO_REVIEW_MINUTES).
+   * A student can have more than one session/day in the week, so this sums
+   * across all their sent sessions.
+   */
+  const studentReportData = useMemo(() => {
+    const studentMap = {};
+    reportManualEntries.forEach((entry) => {
+      if (entry.isAssessment) return;
+      if (entry.status === "absent" || entry.status === "cancelled") return;
+      const day = DAYS.find((d) => d.id === entry.dayId);
+      const dayDateISO = day ? fmtISO(addDays(reportWeekMonday, day.offset)) : "";
+      if (entry.endDate && dayDateISO > entry.endDate) return;
+      if (!studentMap[entry.studentName]) {
+        studentMap[entry.studentName] = {
+          name: entry.studentName,
+          tutorName: entry.tutorName,
+          totalSessions: 0,
+          sentSessions: 0,
+        };
+      }
+      const s = studentMap[entry.studentName];
+      s.totalSessions++;
+      if (countsAsSent(entry)) s.sentSessions++;
+    });
+    return Object.values(studentMap)
+      .map((s) => ({
+        ...s,
+        reviewMinutes: s.sentSessions * AUDIO_REVIEW_MINUTES,
+      }))
+      .sort((a, b) => b.reviewMinutes - a.reviewMinutes);
+  }, [reportManualEntries, reportWeekMonday]);
 
   /**
    * 24-Hour Overdue Tracker
@@ -2272,7 +2461,10 @@ export default function WeeklySchedule() {
       const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
       const isCancelled = entry.status === "cancelled";
-      if (audioSent || isAbsent || isCancelled) return; // not overdue if sent/absent/cancelled
+      const dayDateISO = fmtISO(addDays(reportWeekMonday, day.offset));
+      const isPastEnd = !!(entry.endDate && dayDateISO > entry.endDate);
+      if (audioSent || isAbsent || isCancelled || entry.isAssessment || isPastEnd)
+        return; // not overdue if sent/absent/cancelled/assessment/student stopped
 
       // The DAY of the session always comes from dayId (the source of truth) — a session
       // may have been moved to a different day while its old sessionTime date lingered.
@@ -4869,6 +5061,65 @@ export default function WeeklySchedule() {
                     />
                   </div>
 
+                  {/* Initial assessment tag — excludes this session from all audio-report metrics */}
+                  <div style={styles.reportFormField}>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "#7c3aed",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={manualForm.isAssessment}
+                        onChange={(e) =>
+                          setManualForm((p) => ({
+                            ...p,
+                            isAssessment: e.target.checked,
+                          }))
+                        }
+                      />
+                      🎓 Initial Assessment (no audio review for this session)
+                    </label>
+                  </div>
+
+                  {/* Stop date — student ended tutoring on this date; sessions after it
+                      are excluded from missed/review-time metrics and won't be copied forward */}
+                  <div style={styles.reportFormField}>
+                    <label style={styles.reportFormLabel}>
+                      <span
+                        style={{
+                          ...styles.reportFormLabelDot,
+                          background: "#dc2626",
+                        }}
+                      />
+                      🛑 STUDENT STOPPED ON (optional)
+                    </label>
+                    <input
+                      type="date"
+                      style={styles.reportFormInput}
+                      value={manualForm.endDate}
+                      onChange={(e) =>
+                        setManualForm((p) => ({
+                          ...p,
+                          endDate: e.target.value,
+                        }))
+                      }
+                    />
+                    <div
+                      style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 3 }}
+                    >
+                      If set, sessions dated after this are excluded from
+                      missed/review-time totals and won't carry forward when
+                      copying to next week.
+                    </div>
+                  </div>
+
                   <button style={styles.reportAddBtn} onClick={addManualEntry}>
                     + Add Session Entry
                   </button>
@@ -5103,6 +5354,57 @@ export default function WeeklySchedule() {
                                               >
                                                 {day?.short || entry.dayId}
                                               </div>
+                                              <button
+                                                type="button"
+                                                title={
+                                                  entry.isAssessment
+                                                    ? "Initial assessment — excluded from audio metrics. Click to unmark"
+                                                    : "Mark as initial assessment (no audio review)"
+                                                }
+                                                onClick={() =>
+                                                  patchManualEntry(entry.id, {
+                                                    isAssessment:
+                                                      !entry.isAssessment,
+                                                  })
+                                                }
+                                                style={{
+                                                  ...styles.materialToggle,
+                                                  background: entry.isAssessment
+                                                    ? "#f3e8ff"
+                                                    : "#f8fafc",
+                                                  color: entry.isAssessment
+                                                    ? "#7c3aed"
+                                                    : "#94a3b8",
+                                                  border: `1px solid ${
+                                                    entry.isAssessment
+                                                      ? "#c4b5fd"
+                                                      : "#e2e8f0"
+                                                  }`,
+                                                }}
+                                              >
+                                                {entry.isAssessment
+                                                  ? "🎓 Assessment"
+                                                  : "🎓"}
+                                              </button>
+                                              {entry.endDate && (
+                                                <button
+                                                  type="button"
+                                                  title={`Student stops ${entry.endDate} — click to edit`}
+                                                  onClick={() =>
+                                                    setEditingEntry({
+                                                      ...entry,
+                                                    })
+                                                  }
+                                                  style={{
+                                                    ...styles.materialToggle,
+                                                    background: "#fee2e2",
+                                                    color: "#b91c1c",
+                                                    border: "1px solid #fca5a5",
+                                                  }}
+                                                >
+                                                  🛑 Stops {entry.endDate}
+                                                </button>
+                                              )}
                                               <div
                                                 style={{
                                                   ...styles.newStatusPill,
@@ -5343,6 +5645,23 @@ export default function WeeklySchedule() {
                     <div
                       style={{
                         ...styles.reportCard,
+                        background: "#ecfeff",
+                        borderColor: "#67e8f9",
+                      }}
+                    >
+                      <div style={styles.reportCardLabel}>⏱️ Review Time</div>
+                      <div
+                        style={{ ...styles.reportCardValue, color: "#0e7490" }}
+                      >
+                        {formatDuration(reportData.sent * AUDIO_REVIEW_MINUTES)}
+                      </div>
+                      <div style={styles.reportCardSub}>
+                        {reportData.sent} sessions × {AUDIO_REVIEW_MINUTES}m
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        ...styles.reportCard,
                         background: "#fef2f2",
                         borderColor: "#fca5a5",
                       }}
@@ -5417,6 +5736,57 @@ export default function WeeklySchedule() {
                       </div>
                       <div style={styles.reportCardSub}>
                         sent · none · unanswered
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        ...styles.reportCard,
+                        background: "#f3e8ff",
+                        borderColor: "#d8b4fe",
+                      }}
+                    >
+                      <div style={styles.reportCardLabel}>🎓 Assessment</div>
+                      <div
+                        style={{ ...styles.reportCardValue, color: "#7c3aed" }}
+                      >
+                        {reportData.assessmentCount}
+                      </div>
+                      <div style={styles.reportCardSub}>
+                        excluded from audio metrics
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        ...styles.reportCard,
+                        background: "#f8fafc",
+                        borderColor: "#e2e8f0",
+                      }}
+                    >
+                      <div style={styles.reportCardLabel}>❌ Cancelled</div>
+                      <div
+                        style={{ ...styles.reportCardValue, color: "#64748b" }}
+                      >
+                        {reportData.cancelledCount}
+                      </div>
+                      <div style={styles.reportCardSub}>
+                        excluded from audio metrics
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        ...styles.reportCard,
+                        background: "#fef2f2",
+                        borderColor: "#fca5a5",
+                      }}
+                    >
+                      <div style={styles.reportCardLabel}>🛑 Stopped</div>
+                      <div
+                        style={{ ...styles.reportCardValue, color: "#b91c1c" }}
+                      >
+                        {reportData.stoppedCount}
+                      </div>
+                      <div style={styles.reportCardSub}>
+                        excluded from audio metrics
                       </div>
                     </div>
                   </div>
@@ -5502,6 +5872,7 @@ export default function WeeklySchedule() {
                                   <th style={styles.audioTh}>Min Days</th>
                                   <th style={styles.audioTh}>Sessions Sent</th>
                                   <th style={styles.audioTh}>Min Sessions</th>
+                                  <th style={styles.audioTh}>Review Time</th>
                                   <th style={styles.audioTh}>Status</th>
                                   <th style={styles.audioTh}>Set Min</th>
                                 </tr>
@@ -5607,6 +5978,18 @@ export default function WeeklySchedule() {
                                       <td
                                         style={{
                                           ...styles.audioTd,
+                                          color: "#0e7490",
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        {formatDuration(
+                                          tutor.sentSessions *
+                                            AUDIO_REVIEW_MINUTES,
+                                        )}
+                                      </td>
+                                      <td
+                                        style={{
+                                          ...styles.audioTd,
                                           color: statusColor,
                                           fontWeight: 700,
                                         }}
@@ -5636,6 +6019,91 @@ export default function WeeklySchedule() {
                         );
                       });
                     })()}
+                  </div>
+
+                  {/* Per-student review time — sessions reviewed × 20 min each */}
+                  <div style={{ ...styles.audioCountTable, overflowX: "auto" }}>
+                    <div style={styles.audioCountTitle}>
+                      ⏱️ Review Time This Week — Per Student
+                    </div>
+                    <table style={styles.audioTable}>
+                      <thead>
+                        <tr>
+                          <th style={{ ...styles.audioTh, textAlign: "left" }}>
+                            Student
+                          </th>
+                          <th style={{ ...styles.audioTh, textAlign: "left" }}>
+                            Tutor
+                          </th>
+                          <th style={styles.audioTh}>Sessions Reviewed</th>
+                          <th style={styles.audioTh}>Review Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentReportData.map((student) => (
+                          <tr key={student.name} style={styles.audioTr}>
+                            <td
+                              style={{
+                                ...styles.audioTd,
+                                fontWeight: 700,
+                                textAlign: "left",
+                              }}
+                            >
+                              {student.name}
+                            </td>
+                            <td
+                              style={{
+                                ...styles.audioTd,
+                                textAlign: "left",
+                                color: "#475569",
+                              }}
+                            >
+                              {student.tutorName}
+                            </td>
+                            <td
+                              style={{ ...styles.audioTd, fontWeight: 800 }}
+                            >
+                              {student.sentSessions}
+                            </td>
+                            <td
+                              style={{
+                                ...styles.audioTd,
+                                fontWeight: 700,
+                                color: "#0e7490",
+                              }}
+                            >
+                              {formatDuration(student.reviewMinutes)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr style={{ ...styles.audioTr, background: "#f8fafc" }}>
+                          <td
+                            style={{
+                              ...styles.audioTd,
+                              fontWeight: 800,
+                              textAlign: "left",
+                            }}
+                          >
+                            Total
+                          </td>
+                          <td style={styles.audioTd} />
+                          <td style={{ ...styles.audioTd, fontWeight: 800 }}>
+                            {reportData.sent}
+                          </td>
+                          <td
+                            style={{
+                              ...styles.audioTd,
+                              fontWeight: 800,
+                              color: "#0e7490",
+                            }}
+                          >
+                            {formatDuration(
+                              reportData.sent * AUDIO_REVIEW_MINUTES,
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </>
               )}
@@ -5682,6 +6150,17 @@ export default function WeeklySchedule() {
                 title="Copy this week's sessions to next week, reset to Pending"
               >
                 📅➡️ Copy to Next Week
+              </button>
+              <button
+                style={{
+                  ...styles.btnGhost,
+                  color: "#dc2626",
+                  borderColor: "#fca5a5",
+                }}
+                onClick={clearAudioReportWeek}
+                title="Delete every session entry in this week's Audio Report"
+              >
+                🗑️ Clear Week
               </button>
               <button
                 style={{
@@ -5866,6 +6345,53 @@ export default function WeeklySchedule() {
               <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
                 Set the exact date/time this session happened. Used to calculate
                 when the 24-hour audio deadline passes.
+              </div>
+            </div>
+
+            <div style={styles.field}>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: "pointer",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  color: "#7c3aed",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!editingEntry.isAssessment}
+                  onChange={(e) =>
+                    setEditingEntry((p) => ({
+                      ...p,
+                      isAssessment: e.target.checked,
+                    }))
+                  }
+                />
+                🎓 Initial Assessment (no audio review for this session)
+              </label>
+            </div>
+
+            <div style={styles.field}>
+              <span style={styles.fieldLabel}>
+                🛑 Student Stopped On (optional)
+              </span>
+              <input
+                type="date"
+                style={styles.input}
+                value={editingEntry.endDate || ""}
+                onChange={(e) =>
+                  setEditingEntry((p) => ({
+                    ...p,
+                    endDate: e.target.value,
+                  }))
+                }
+              />
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
+                Sessions dated after this are excluded from missed/review-time
+                totals and won't carry forward when copying to next week.
               </div>
             </div>
 

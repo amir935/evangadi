@@ -3,6 +3,15 @@ const express = require("express");
 const { pool } = require("../db");
 const router = express.Router();
 
+function formatDate(d) {
+  if (!d) return null;
+  if (typeof d === "string") return d.slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 const VALID_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const VALID_STATUS = [
   "pending",
@@ -17,7 +26,7 @@ const VALID_MATERIAL_STATUS = ["unanswered", "sent", "none"];
 // GET /api/manual-entries/:weekKey
 router.get("/:weekKey", async (req, res) => {
   const [rows] = await pool.query(
-    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at, makeup_day FROM report_manual_entries WHERE week_key = ? ORDER BY id",
+    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at, makeup_day, is_assessment, end_date FROM report_manual_entries WHERE week_key = ? ORDER BY id",
     [req.params.weekKey],
   );
   res.json(
@@ -35,6 +44,8 @@ router.get("/:weekKey", async (req, res) => {
       reviewedBy: r.reviewed_by || null,
       reviewedAt: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
       makeupDay: r.makeup_day || null,
+      isAssessment: !!r.is_assessment,
+      endDate: r.end_date ? formatDate(r.end_date) : null,
     })),
   );
 });
@@ -50,6 +61,8 @@ router.post("/:weekKey", async (req, res) => {
     materialStatus,
     sessionTime,
     makeupDay,
+    isAssessment,
+    endDate,
   } = req.body || {};
   if (!tutorName || !studentName || !dayId)
     return res
@@ -62,12 +75,15 @@ router.post("/:weekKey", async (req, res) => {
     ? materialStatus
     : "unanswered";
   const sessionTimeVal = sessionTime ? new Date(sessionTime) : null;
+  const isAssessmentVal = isAssessment ? 1 : 0;
+  const endDateVal =
+    endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? endDate : null;
   // If created directly as "reviewed", stamp the reviewer right away.
   const revById = st === "reviewed" && req.user ? req.user.id : null;
   const revBy = st === "reviewed" && req.user ? req.user.name : null;
   const revAt = st === "reviewed" ? new Date() : null;
   const [info] = await pool.query(
-    "INSERT INTO report_manual_entries (week_key, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by_id, reviewed_by, reviewed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO report_manual_entries (week_key, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by_id, reviewed_by, reviewed_at, is_assessment, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
       req.params.weekKey,
       tutorName,
@@ -80,6 +96,8 @@ router.post("/:weekKey", async (req, res) => {
       revById,
       revBy,
       revAt,
+      isAssessmentVal,
+      endDateVal,
     ],
   );
   res.status(201).json({
@@ -93,6 +111,8 @@ router.post("/:weekKey", async (req, res) => {
     sessionTime: sessionTimeVal ? sessionTimeVal.toISOString() : null,
     reviewedBy: revBy,
     reviewedAt: revAt ? revAt.toISOString() : null,
+    isAssessment: !!isAssessmentVal,
+    endDate: endDateVal,
   });
 });
 
@@ -107,6 +127,8 @@ router.patch("/:id", async (req, res) => {
     materialStatus,
     sessionTime,
     makeupDay,
+    isAssessment,
+    endDate,
   } = req.body || {};
   if (status && !VALID_STATUS.includes(status))
     return res.status(400).json({ error: "Invalid status" });
@@ -152,6 +174,14 @@ router.patch("/:id", async (req, res) => {
     sets.push("makeup_day = ?");
     vals.push(makeupDay || null);
   }
+  if (isAssessment !== undefined) {
+    sets.push("is_assessment = ?");
+    vals.push(isAssessment ? 1 : 0);
+  }
+  if (endDate !== undefined) {
+    sets.push("end_date = ?");
+    vals.push(endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? endDate : null);
+  }
 
   // Track who reviewed: when status becomes "reviewed", stamp the current user + time.
   // When it moves away from "reviewed", clear the stamp so stale reviewer info doesn't linger.
@@ -180,6 +210,15 @@ router.patch("/:id", async (req, res) => {
     vals,
   );
   res.json({ ok: true });
+});
+
+// DELETE /api/manual-entries/week/:weekKey — clear every entry in one week
+router.delete("/week/:weekKey", async (req, res) => {
+  const [info] = await pool.query(
+    "DELETE FROM report_manual_entries WHERE week_key = ?",
+    [req.params.weekKey],
+  );
+  res.json({ ok: true, deleted: info.affectedRows });
 });
 
 // DELETE /api/manual-entries/:id
