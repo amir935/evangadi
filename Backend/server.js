@@ -3,6 +3,35 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+// Express 4 ignores rejected promises from async route handlers, so any failed
+// DB query left the request hanging forever (the app stuck on "syncing…").
+// Forward those rejections to the error handler at the bottom instead.
+const Route = require("express/lib/router/route");
+for (const method of [
+  ...require("http").METHODS.map((m) => m.toLowerCase()),
+  "all",
+]) {
+  const original = Route.prototype[method];
+  if (!original) continue;
+  Route.prototype[method] = function (...handlers) {
+    return original.apply(
+      this,
+      handlers.flat(Infinity).map((fn) =>
+        typeof fn !== "function" || fn.length === 4
+          ? fn
+          : function (req, res, next) {
+              try {
+                const r = fn(req, res, next);
+                if (r && typeof r.catch === "function") r.catch(next);
+              } catch (err) {
+                next(err);
+              }
+            },
+      ),
+    );
+  };
+}
+
 const { initSchema } = require("./db");
 const { authRequired, requireRole } = require("./middleware/auth");
 

@@ -40,11 +40,28 @@ async function request(path, options = {}, auth = true) {
   }
   // no-store: never serve API responses from the HTTP cache, so reads always
   // reflect the latest writes (some hosts/CDNs cache GET responses otherwise).
-  const res = await fetch(`${API_BASE}${path}`, {
-    cache: "no-store",
-    ...options,
-    headers,
-  });
+  // Give up after 20s so a stalled request can't leave the UI "busy" forever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      cache: "no-store",
+      signal: controller.signal,
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    if (err.name === "AbortError")
+      throw new Error("Server took too long to respond — please try again", {
+        cause: err,
+      });
+    throw new Error("Network error — check your connection and try again", {
+      cause: err,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (res.status === 401) {
     clearToken();
     throw new Error("Session expired — please log in again");
@@ -316,6 +333,10 @@ export const api = {
     const q = qs.toString();
     return request(`/api/admin/review-activity${q ? "?" + q : ""}`);
   },
+
+  // Admin — preview / permanently delete data older than the last two weeks
+  getOldDataPreview: () => request(`/api/admin/old-data`),
+  deleteOldData: () => request(`/api/admin/old-data`, { method: "DELETE" }),
 };
 
 export default api;

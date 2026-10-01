@@ -185,7 +185,18 @@ router.patch("/:id", async (req, res) => {
 
   // Track who reviewed: when status becomes "reviewed", stamp the current user + time.
   // When it moves away from "reviewed", clear the stamp so stale reviewer info doesn't linger.
+  // Only on an actual status change — re-saving an already-reviewed entry (e.g. fixing the
+  // filename in the Edit modal) must not overwrite the original reviewer/time.
+  let statusChanged = false;
   if (status !== undefined) {
+    const [[cur]] = await pool.query(
+      "SELECT status FROM report_manual_entries WHERE id = ?",
+      [req.params.id],
+    );
+    if (!cur) return res.status(404).json({ error: "Entry not found" });
+    statusChanged = cur.status !== status;
+  }
+  if (statusChanged) {
     if (status === "reviewed") {
       sets.push("reviewed_by_id = ?");
       vals.push(req.user ? req.user.id : null);

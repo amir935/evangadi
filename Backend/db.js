@@ -11,6 +11,11 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  // Keep idle connections alive so the host doesn't silently drop them, and fail
+  // fast instead of hanging when the DB can't be reached.
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  connectTimeout: 10000,
 });
 
 async function initSchema() {

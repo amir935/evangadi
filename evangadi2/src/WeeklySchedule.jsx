@@ -254,6 +254,12 @@ function fmtISO(date) {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+// Local "YYYY-MM-DDTHH:mm" for <input type="datetime-local"> (toISOString would give UTC)
+function fmtLocalDateTime(date) {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${fmtISO(date)}T${hh}:${mm}`;
+}
 function fmtShort(date) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
@@ -4891,9 +4897,7 @@ export default function WeeklySchedule() {
                                 0,
                                 0,
                               );
-                              newSessionTime = merged
-                                .toISOString()
-                                .slice(0, 16);
+                              newSessionTime = merged.toISOString();
                             }
                             return {
                               ...p,
@@ -5011,7 +5015,7 @@ export default function WeeklySchedule() {
                               merged.setHours(h, m, 0, 0);
                               setManualForm((p) => ({
                                 ...p,
-                                sessionTime: merged.toISOString().slice(0, 16),
+                                sessionTime: merged.toISOString(),
                               }));
                             }}
                           />
@@ -6323,9 +6327,7 @@ export default function WeeklySchedule() {
                 style={styles.input}
                 value={
                   editingEntry.sessionTime
-                    ? new Date(editingEntry.sessionTime)
-                        .toISOString()
-                        .slice(0, 16)
+                    ? fmtLocalDateTime(new Date(editingEntry.sessionTime))
                     : ""
                 }
                 onChange={(e) =>

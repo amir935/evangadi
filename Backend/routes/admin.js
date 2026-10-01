@@ -231,4 +231,87 @@ router.get("/week-status/:weekKey", async (req, res) => {
   });
 });
 
+// --- Old data cleanup ---
+// Works in bi-weekly periods (same anchor as the frontend's Bi-Weekly Summary):
+// keeps the current period plus the previous one, since that period's report is
+// still being submitted early in the current one, and removes everything older.
+// Week keys may be namespaced ("c:2026-W20"), so compare on the "2026-W20" core,
+// which sorts correctly as a string.
+const BIWEEKLY_ANCHOR = Date.UTC(2026, 4, 18); // Mon 2026-05-18, period 0 start
+const WEEK_TABLES = [
+  "tutors", // students + weekly_status cascade from here
+  "weekly_status",
+  "schedule_cleared_weeks",
+  "day_notes",
+  "audio_received",
+  "report_manual_entries",
+  "week_expectations",
+  "new_student_watches",
+];
+const WEEK_CORE = "SUBSTRING_INDEX(week_key, ':', -1)";
+
+function cleanupCutoff() {
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const period = Math.floor((today - BIWEEKLY_ANCHOR) / (14 * 86400000));
+  // Start of the previous period — everything before this goes
+  const d = new Date(BIWEEKLY_ANCHOR + (period - 1) * 14 * 86400000);
+  const date = d.toISOString().slice(0, 10);
+  d.setUTCDate(d.getUTCDate() + 3); // Thursday decides the ISO week's year
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return {
+    weekKey: `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`,
+    date,
+  };
+}
+
+async function countOldData(conn, cutoff) {
+  const counts = {};
+  for (const t of WEEK_TABLES) {
+    const [[r]] = await conn.query(
+      `SELECT COUNT(*) AS c FROM ${t} WHERE ${WEEK_CORE} < ?`,
+      [cutoff.weekKey],
+    );
+    counts[t] = r.c;
+  }
+  const [[r]] = await conn.query(
+    "SELECT COUNT(*) AS c FROM reviews WHERE review_date < ?",
+    [cutoff.date],
+  );
+  counts.reviews = r.c;
+  return counts;
+}
+
+// GET /api/admin/old-data — what a cleanup would delete (nothing is removed)
+router.get("/old-data", async (req, res) => {
+  const cutoff = cleanupCutoff();
+  res.json({ cutoff, counts: await countOldData(pool, cutoff) });
+});
+
+// DELETE /api/admin/old-data — permanently delete everything older than the cutoff
+router.delete("/old-data", async (req, res) => {
+  const cutoff = cleanupCutoff();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const counts = await countOldData(conn, cutoff);
+    for (const t of WEEK_TABLES) {
+      await conn.query(`DELETE FROM ${t} WHERE ${WEEK_CORE} < ?`, [
+        cutoff.weekKey,
+      ]);
+    }
+    await conn.query("DELETE FROM reviews WHERE review_date < ?", [
+      cutoff.date,
+    ]);
+    await conn.commit();
+    res.json({ ok: true, cutoff, counts });
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;

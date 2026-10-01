@@ -86,6 +86,7 @@ export default function AdminPanel() {
     { id: "tutors", label: "Tutor Roster", icon: "🧑‍🏫", visible: true },
     { id: "students", label: "Student Roster", icon: "🎓", visible: true },
     { id: "users", label: "User Accounts", icon: "👥", visible: isAdmin },
+    { id: "cleanup", label: "Storage Cleanup", icon: "🧹", visible: isAdmin },
   ].filter((s) => s.visible);
 
   return (
@@ -132,6 +133,7 @@ export default function AdminPanel() {
           {section === "users" && isAdmin && (
             <UserManagementSection flash={flash} currentUserId={user.id} />
           )}
+          {section === "cleanup" && isAdmin && <CleanupSection flash={flash} />}
         </main>
       </div>
 
@@ -938,7 +940,9 @@ function TutorRosterSection({ flash }) {
                         <span style={styles.inactiveTag}>inactive</span>
                       )}
                       {t.seniorGood && (
-                        <span style={styles.seniorGoodTag}>⭐ Senior & Good</span>
+                        <span style={styles.seniorGoodTag}>
+                          ⭐ Senior & Good
+                        </span>
                       )}
                     </div>
                     <div style={styles.rowMeta}>
@@ -1308,6 +1312,114 @@ function StudentRosterSection({ flash }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* =========================== STORAGE CLEANUP =========================== */
+
+const CLEANUP_LABELS = {
+  tutors: "Schedule tutor slots (and their students)",
+  weekly_status: "Video review statuses",
+  schedule_cleared_weeks: "Cleared-week markers",
+  day_notes: "Audio Report day notes",
+  audio_received: "Audio received marks",
+  report_manual_entries: "Audio Report entries",
+  week_expectations: "Week-only expectations",
+  new_student_watches: "Weekly Watch list items",
+  reviews: "Video review checklists",
+};
+
+function CleanupSection({ flash }) {
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api
+      .getOldDataPreview()
+      .then(setPreview)
+      .catch((err) => flash(err.message || "Failed to load"))
+      .finally(() => setLoading(false));
+  }, [flash]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const total = preview
+    ? Object.values(preview.counts).reduce((a, b) => a + b, 0)
+    : 0;
+
+  const runCleanup = async () => {
+    if (
+      !window.confirm(
+        `Permanently delete ${total} records from before ${preview.cutoff.weekKey}? This cannot be undone.`,
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      const r = await api.deleteOldData();
+      const n = Object.values(r.counts).reduce((a, b) => a + b, 0);
+      flash(`Deleted ${n} old records`);
+      load();
+    } catch (err) {
+      flash(err.message || "Cleanup failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={styles.sectionTitle}>🧹 Storage Cleanup</h2>
+      <p style={styles.sectionSub}>
+        Frees space on the server by permanently deleting all week-based data
+        (schedules, video reviews, Audio Report, notes, Weekly Watch) from
+        before the previous bi-weekly period. The current and previous periods
+        are kept so their bi-weekly reports still work. Rosters, user accounts,
+        groups and permanent expectations are kept.
+      </p>
+      <div style={styles.card}>
+        {loading || !preview ? (
+          <div style={styles.loading}>Checking old data…</div>
+        ) : (
+          <>
+            <div style={styles.cardTitle}>
+              Data before the previous bi-weekly period (starting{" "}
+              {preview.cutoff.date}, {preview.cutoff.weekKey})
+            </div>
+            <table style={{ width: "100%", fontSize: 13, marginBottom: 14 }}>
+              <tbody>
+                {Object.entries(preview.counts).map(([k, c]) => (
+                  <tr key={k}>
+                    <td style={{ padding: "4px 0", color: "#475569" }}>
+                      {CLEANUP_LABELS[k] || k}
+                    </td>
+                    <td style={{ textAlign: "right", fontWeight: 700 }}>{c}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button
+              style={{
+                ...styles.btnPrimary,
+                background: "#dc2626",
+                opacity: total === 0 || deleting ? 0.5 : 1,
+              }}
+              disabled={total === 0 || deleting}
+              onClick={runCleanup}
+            >
+              {deleting
+                ? "Deleting…"
+                : total === 0
+                  ? "Nothing to delete"
+                  : `Delete ${total} old records`}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
