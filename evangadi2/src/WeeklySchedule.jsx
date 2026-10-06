@@ -163,12 +163,18 @@ const WEEKDAYS = DAYS.filter((d) => !d.weekend);
 const WEEKEND = DAYS.filter((d) => d.weekend);
 const DAY_LABEL = Object.fromEntries(DAYS.map((d) => [d.id, d.short]));
 
-// A session counts as "reviewed/sent" if it was uploaded/reviewed, OR if it was
-// rescheduled and its make-up class has since been marked done.
-const countsAsSent = (e) =>
-  e.status === "uploaded" ||
-  e.status === "reviewed" ||
-  (e.status === "rescheduled" && !!e.makeupDay);
+// A session counts as "reviewed/sent" if it was uploaded/reviewed. A rescheduled
+// session's audio is tracked on its make-up copy instead (see isExcused).
+const countsAsSent = (e) => e.status === "uploaded" || e.status === "reviewed";
+
+// Sessions with no audio expected: cancelled ones, and rescheduled ones that have
+// been dealt with (make-up scheduled, or tagged with a note like "no make-up").
+// Excluded from reminders, overdue and missed counts. An untagged rescheduled
+// session still nags, so it gets tagged.
+const isExcused = (e) =>
+  e.status === "cancelled" ||
+  (e.status === "rescheduled" &&
+    (!!e.makeupDay || !!e.makeupDate || !!e.cancelNote?.trim()));
 
 // Average time it takes to review one student's audio submission.
 const AUDIO_REVIEW_MINUTES = 20;
@@ -226,6 +232,17 @@ const STATUS = {
     next: "pending",
   },
 };
+
+// Quick-pick notes for cancelled/rescheduled sessions (what the tutor's doc says
+// about the make-up class).
+const CANCEL_NOTE_PRESETS = [
+  "Make-up this week",
+  "Make-up next week",
+  "No make-up — uses next regular class",
+];
+const hasCancelNote = (e) =>
+  (e.status === "cancelled" || e.status === "rescheduled") &&
+  !!e.cancelNote?.trim();
 
 const PRIORITY = {
   normal: { label: "Normal", color: "#64748b", icon: "", rank: 2 },
@@ -352,6 +369,7 @@ function CalendarGridView({
   onDeleteSession,
   onMakeupDone,
   onMakeupUndo,
+  onNoMakeup,
 }) {
   const tutorNames = [...new Set(entries.map((e) => e.tutorName))].sort();
   const dragRef = useRef(null);
@@ -534,8 +552,12 @@ function CalendarGridView({
                                   draggable
                                   onDragStart={(e) => handleDragStart(e, entry)}
                                   onContextMenu={(e) => {
-                                    // Only rescheduled sessions get the make-up menu
-                                    if (entry.status !== "rescheduled") return;
+                                    // Only cancelled/rescheduled sessions get the make-up menu
+                                    if (
+                                      entry.status !== "rescheduled" &&
+                                      entry.status !== "cancelled"
+                                    )
+                                      return;
                                     e.preventDefault();
                                     setMakeupMenu({
                                       entry,
@@ -569,7 +591,8 @@ function CalendarGridView({
                                       }}
                                       onClick={() => onCellClick(entry)}
                                       title={
-                                        entry.status === "rescheduled"
+                                        entry.status === "rescheduled" ||
+                                        entry.status === "cancelled"
                                           ? "Click to edit · right-click for make-up options"
                                           : "Click to edit this session"
                                       }
@@ -629,7 +652,7 @@ function CalendarGridView({
                                         </span>
                                         {entry.makeupDay && (
                                           <span
-                                            title={`Make-up done on ${DAY_LABEL[entry.makeupDay] || entry.makeupDay}`}
+                                            title={`Make-up on ${DAY_LABEL[entry.makeupDay] || entry.makeupDay} ${entry.makeupDate || ""}`}
                                             style={{
                                               fontSize: 9,
                                               fontWeight: 800,
@@ -639,9 +662,48 @@ function CalendarGridView({
                                               borderRadius: 999,
                                             }}
                                           >
-                                            ✓ make-up{" "}
+                                            🔁 make-up{" "}
                                             {DAY_LABEL[entry.makeupDay] ||
                                               entry.makeupDay}
+                                            {entry.makeupDate &&
+                                            entry.makeupDate >
+                                              fmtISO(addDays(weekMonday, 6))
+                                              ? " (next wk)"
+                                              : ""}
+                                          </span>
+                                        )}
+                                        {entry.makeupOfId && (
+                                          <span
+                                            title="Make-up class for a cancelled/rescheduled session"
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 800,
+                                              color: "#0369a1",
+                                              background: "#e0f2fe",
+                                              padding: "1px 5px",
+                                              borderRadius: 999,
+                                            }}
+                                          >
+                                            🔁 make-up class
+                                          </span>
+                                        )}
+                                        {hasCancelNote(entry) && (
+                                          <span
+                                            title={entry.cancelNote}
+                                            style={{
+                                              fontSize: 9,
+                                              fontWeight: 800,
+                                              color: "#6b21a8",
+                                              background: "#f3e8ff",
+                                              padding: "1px 5px",
+                                              borderRadius: 999,
+                                              maxWidth: 120,
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                              whiteSpace: "nowrap",
+                                            }}
+                                          >
+                                            📝 {entry.cancelNote}
                                           </span>
                                         )}
                                         {entry.isAssessment && (
@@ -729,8 +791,8 @@ function CalendarGridView({
         💡 Drag a session chip to move it · hold{" "}
         <kbd style={styles.kbd}>Ctrl</kbd> while dragging to copy · click 📋 on
         a chip to copy, then click any + to paste ·{" "}
-        <strong>right-click a Rescheduled session</strong> to mark its make-up
-        done
+        <strong>right-click a Cancelled/Rescheduled session</strong> to
+        schedule its make-up class (it's copied to that day automatically)
       </div>
 
       {makeupMenu && (
@@ -747,23 +809,24 @@ function CalendarGridView({
             style={{
               ...styles.makeupMenu,
               left: Math.min(makeupMenu.x, window.innerWidth - 220),
-              top: Math.min(makeupMenu.y, window.innerHeight - 260),
+              top: Math.min(makeupMenu.y, window.innerHeight - 340),
             }}
           >
             <div style={styles.makeupMenuHeader}>
               🔁 {makeupMenu.entry.studentName}
               <div style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>
-                Rescheduled from{" "}
+                {STATUS[makeupMenu.entry.status]?.label} from{" "}
                 {DAY_LABEL[makeupMenu.entry.dayId] || makeupMenu.entry.dayId}
               </div>
             </div>
-            {makeupMenu.entry.makeupDay ? (
+            {makeupMenu.entry.makeupDay || makeupMenu.entry.makeupDate ? (
               <>
                 <div style={styles.makeupMenuNote}>
-                  ✓ Make-up done on{" "}
+                  🔁 Make-up on{" "}
                   <strong>
                     {DAY_LABEL[makeupMenu.entry.makeupDay] ||
-                      makeupMenu.entry.makeupDay}
+                      makeupMenu.entry.makeupDay}{" "}
+                    {makeupMenu.entry.makeupDate || ""}
                   </strong>
                 </div>
                 <button
@@ -773,32 +836,50 @@ function CalendarGridView({
                     setMakeupMenu(null);
                   }}
                 >
-                  ↩ Undo make-up done
+                  ↩ Remove make-up (deletes the Pending copy)
                 </button>
               </>
             ) : (
               <>
-                <div style={styles.makeupMenuLabel}>
-                  ✅ Make-up class happened on:
-                </div>
-                <div style={styles.makeupMenuDays}>
-                  {DAYS.map((d) => (
-                    <button
-                      key={d.id}
-                      style={{
-                        ...styles.makeupMenuDayBtn,
-                        borderColor: d.color + "55",
-                        color: d.color,
-                      }}
-                      onClick={() => {
-                        onMakeupDone(makeupMenu.entry, d.id);
-                        setMakeupMenu(null);
-                      }}
-                    >
-                      {d.short}
-                    </button>
-                  ))}
-                </div>
+                {[
+                  { label: "📅 Make-up this week on:", weekOffset: 0 },
+                  { label: "➡️ Make-up next week on:", weekOffset: 7 },
+                ].map(({ label, weekOffset }) => (
+                  <React.Fragment key={weekOffset}>
+                    <div style={styles.makeupMenuLabel}>{label}</div>
+                    <div style={styles.makeupMenuDays}>
+                      {DAYS.map((d) => {
+                        const date = addDays(weekMonday, d.offset + weekOffset);
+                        return (
+                          <button
+                            key={d.id}
+                            title={fmtShort(date)}
+                            style={{
+                              ...styles.makeupMenuDayBtn,
+                              borderColor: d.color + "55",
+                              color: d.color,
+                            }}
+                            onClick={() => {
+                              onMakeupDone(makeupMenu.entry, fmtISO(date));
+                              setMakeupMenu(null);
+                            }}
+                          >
+                            {d.short}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </React.Fragment>
+                ))}
+                <button
+                  style={{ ...styles.makeupMenuUndo, marginTop: 6 }}
+                  onClick={() => {
+                    onNoMakeup(makeupMenu.entry);
+                    setMakeupMenu(null);
+                  }}
+                >
+                  ⏭ No make-up — uses next regular class
+                </button>
               </>
             )}
           </div>
@@ -1252,7 +1333,7 @@ export default function WeeklySchedule() {
     reportManualEntries.forEach((entry) => {
       const isSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
-      const isCancelled = entry.status === "cancelled";
+      const isCancelled = isExcused(entry);
       if (isSent || isAbsent || isCancelled || entry.isAssessment) return;
 
       const day = DAYS.find((d) => d.id === entry.dayId);
@@ -1333,19 +1414,61 @@ export default function WeeklySchedule() {
     }
   };
 
-  // Mark a rescheduled session's make-up as done on a given day.
-  // Keeps status "rescheduled" (so the badge/history is preserved) but records makeupDay,
-  // which makes it count as reviewed in the totals below.
-  const handleMakeupDone = async (entry, makeupDayId) => {
-    await patchManualEntry(entry.id, { makeupDay: makeupDayId });
-    flash(
-      `✅ Make-up marked done on ${DAY_LABEL[makeupDayId] || makeupDayId} — now counts as reviewed`,
-    );
+  // Schedule a cancelled/rescheduled session's make-up class on `dateISO`
+  // (YYYY-MM-DD, this week or later). The server creates a Pending copy of the
+  // session on that date — in whichever week it falls — at the same time of day,
+  // replacing any earlier copy that has no audio yet. dateISO = null clears it.
+  const setMakeup = async (entry, dateISO) => {
+    let body = { date: null };
+    if (dateISO) {
+      const [y, m, d] = dateISO.split("-").map(Number);
+      const date = new Date(y, m - 1, d);
+      let sessionTime = null;
+      if (entry.sessionTime) {
+        const st = new Date(entry.sessionTime);
+        date.setHours(st.getHours(), st.getMinutes(), 0, 0);
+        sessionTime = date.toISOString();
+      }
+      body = {
+        date: dateISO,
+        weekKey: weekKey(getMonday(date)),
+        dayId: ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][date.getDay()],
+        sessionTime,
+      };
+    }
+    try {
+      const { copy, deletedIds } = await api.setManualEntryMakeup(
+        entry.id,
+        body,
+      );
+      const currentKey = weekKey(reportWeekMonday);
+      setReportManualEntries((p) => {
+        const next = p
+          .filter((e) => !deletedIds.includes(e.id))
+          .map((e) =>
+            e.id === entry.id
+              ? { ...e, makeupDate: body.date, makeupDay: body.dayId || null }
+              : e,
+          );
+        if (copy && copy.weekKey === currentKey) next.push(copy);
+        return next;
+      });
+      if (!copy) flash("↩ Make-up removed");
+      else
+        flash(
+          `🔁 Make-up added on ${DAY_LABEL[copy.dayId]} ${dateISO}` +
+            (copy.weekKey === currentKey ? "" : " (in that week's report)"),
+        );
+    } catch (err) {
+      flash(err.message || "Failed to set make-up");
+    }
   };
-  const handleMakeupUndo = async (entry) => {
-    await patchManualEntry(entry.id, { makeupDay: null });
-    flash("↩ Make-up done cleared");
-  };
+  const handleMakeupDone = (entry, dateISO) => setMakeup(entry, dateISO);
+  const handleMakeupUndo = (entry) => setMakeup(entry, null);
+  const handleNoMakeup = (entry) =>
+    patchManualEntry(entry.id, {
+      cancelNote: "No make-up — uses next regular class",
+    });
   const [searchQuery, setSearchQuery] = useState("");
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const matchesSearch = (text) =>
@@ -1954,6 +2077,9 @@ export default function WeeklySchedule() {
         // Cancelled sessions still carry forward — a cancellation is a one-week
         // event (e.g. holiday), not the end of the slot, so next week resets to Pending.
 
+        // A make-up class is a one-off, not a weekly slot.
+        if (entry.makeupOfId) continue;
+
         // Skip any session with a stop date set at all — once a student has a
         // known end date, don't perpetuate their slot into future weeks.
         if (entry.endDate) {
@@ -2033,6 +2159,93 @@ export default function WeeklySchedule() {
     }
   };
 
+  // Delete duplicate sessions: same tutor + student on the same day of this week.
+  // Keeps the most "complete" one (reviewed > uploaded > tagged > pending, then has
+  // audio/material/note, then the oldest). Sessions at clearly different times on the
+  // same day are treated as genuinely separate classes and left alone.
+  const removeDuplicateSessions = async () => {
+    const norm = (s) => (s || "").trim().toLowerCase();
+    const timeOf = (e) => {
+      if (!e.sessionTime) return null;
+      const d = new Date(e.sessionTime);
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    const statusRank = {
+      reviewed: 5,
+      uploaded: 4,
+      rescheduled: 2,
+      cancelled: 2,
+      absent: 2,
+      pending: 1,
+    };
+    const score = (e) =>
+      (statusRank[e.status] || 0) * 1000 +
+      (e.audioFilename?.trim() ? 100 : 0) +
+      ((e.materialStatus || "unanswered") !== "unanswered" ? 10 : 0) +
+      (e.cancelNote?.trim() || e.makeupDate ? 5 : 0);
+
+    const groups = {};
+    reportManualEntries.forEach((e) => {
+      const key = `${norm(e.tutorName)}|${norm(e.studentName)}|${e.dayId}`;
+      (groups[key] = groups[key] || []).push(e);
+    });
+
+    const toDelete = [];
+    const lines = [];
+    let skippedDiffTime = 0;
+    Object.values(groups).forEach((list) => {
+      if (list.length < 2) return;
+      const times = new Set(list.map(timeOf).filter((t) => t !== null));
+      if (times.size > 1) {
+        skippedDiffTime++;
+        return;
+      }
+      const sorted = [...list].sort((a, b) => score(b) - score(a) || a.id - b.id);
+      const [keep, ...dups] = sorted;
+      toDelete.push(...dups);
+      lines.push(
+        `• ${keep.studentName} (${keep.tutorName}) ${DAY_LABEL[keep.dayId] || keep.dayId}: keep ${STATUS[keep.status]?.label || keep.status}, delete ${dups.length}`,
+      );
+    });
+
+    const skipMsg =
+      skippedDiffTime > 0
+        ? `\n\n(${skippedDiffTime} student/day with sessions at different times left alone)`
+        : "";
+    if (toDelete.length === 0) {
+      flash("No duplicate sessions found this week" + (skippedDiffTime ? ` (${skippedDiffTime} same-day pair at different times left alone)` : ""));
+      return;
+    }
+    if (
+      !window.confirm(
+        `Delete ${toDelete.length} duplicate session${toDelete.length !== 1 ? "s" : ""}?\n\n${lines.join("\n")}${skipMsg}`,
+      )
+    )
+      return;
+
+    setReportLoading(true);
+    const deleted = [];
+    try {
+      for (const e of toDelete) {
+        try {
+          await api.deleteManualEntry(e.id);
+          deleted.push(e.id);
+        } catch (err) {
+          console.error(`Failed to delete duplicate ${e.id}:`, err);
+        }
+      }
+      setReportManualEntries((p) => p.filter((e) => !deleted.includes(e.id)));
+      flash(
+        `🧹 Removed ${deleted.length} duplicate session${deleted.length !== 1 ? "s" : ""}` +
+          (deleted.length < toDelete.length
+            ? ` (${toDelete.length - deleted.length} failed)`
+            : ""),
+      );
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
   const loadBiweeklySummary = async (startDateStr) => {
     if (!startDateStr) return;
     setBiweeklyLoading(true);
@@ -2080,7 +2293,7 @@ export default function WeeklySchedule() {
         }
         const t = tutorMap[key];
         const isSent = countsAsSent(entry);
-        const isCancelled = entry.status === "cancelled";
+        const isCancelled = isExcused(entry);
         const isAbsent = entry.status === "absent";
         const isWeek1 = entries1.some((e) => e.id === entry.id);
 
@@ -2138,6 +2351,7 @@ export default function WeeklySchedule() {
       sessionTime,
       isAssessment,
       endDate,
+      cancelNote,
     } = editingEntry;
     // Safety net: a filename with status still left on "pending" is almost certainly an oversight.
     const effectiveStatus =
@@ -2152,14 +2366,28 @@ export default function WeeklySchedule() {
         sessionTime,
         isAssessment,
         endDate: endDate || null,
+        cancelNote: cancelNote || "",
       });
+      const original = reportManualEntries.find((e) => e.id === id);
+      // makeupDate is applied separately by setMakeup (it creates/removes the copy)
       setReportManualEntries((p) =>
         p.map((e) =>
-          e.id === id ? { ...e, ...editingEntry, status: effectiveStatus } : e,
+          e.id === id
+            ? {
+                ...e,
+                ...editingEntry,
+                status: effectiveStatus,
+                makeupDate: e.makeupDate,
+                makeupDay: e.makeupDay,
+              }
+            : e,
         ),
       );
       setEditingEntry(null);
       flash("Entry updated");
+      const newMakeup = editingEntry.makeupDate || null;
+      if (newMakeup !== (original?.makeupDate || null))
+        await setMakeup(editingEntry, newMakeup);
     } catch (err) {
       flash(err.message || "Failed to update");
     }
@@ -2244,7 +2472,7 @@ export default function WeeklySchedule() {
       const isToday = dayDateISO === todayISO;
       const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
-      const isCancelled = entry.status === "cancelled";
+      const isCancelled = isExcused(entry);
       const isAssessment = !!entry.isAssessment;
       // The student already stopped tutoring by this session's date — nothing to review.
       const isPastEnd = !!(entry.endDate && dayDateISO > entry.endDate);
@@ -2379,7 +2607,7 @@ export default function WeeklySchedule() {
         assessmentCount++;
         return;
       }
-      if (entry.status === "cancelled") {
+      if (isExcused(entry)) {
         cancelledCount++;
         return;
       }
@@ -2422,7 +2650,7 @@ export default function WeeklySchedule() {
     const studentMap = {};
     reportManualEntries.forEach((entry) => {
       if (entry.isAssessment) return;
-      if (entry.status === "absent" || entry.status === "cancelled") return;
+      if (entry.status === "absent" || isExcused(entry)) return;
       const day = DAYS.find((d) => d.id === entry.dayId);
       const dayDateISO = day ? fmtISO(addDays(reportWeekMonday, day.offset)) : "";
       if (entry.endDate && dayDateISO > entry.endDate) return;
@@ -2461,7 +2689,7 @@ export default function WeeklySchedule() {
       if (!day) return;
       const audioSent = countsAsSent(entry);
       const isAbsent = entry.status === "absent";
-      const isCancelled = entry.status === "cancelled";
+      const isCancelled = isExcused(entry);
       const dayDateISO = fmtISO(addDays(reportWeekMonday, day.offset));
       const isPastEnd = !!(entry.endDate && dayDateISO > entry.endDate);
       if (audioSent || isAbsent || isCancelled || entry.isAssessment || isPastEnd)
@@ -5197,6 +5425,7 @@ export default function WeeklySchedule() {
                           onDeleteSession={deleteManualEntry}
                           onMakeupDone={handleMakeupDone}
                           onMakeupUndo={handleMakeupUndo}
+                          onNoMakeup={handleNoMakeup}
                         />
                       ) : (
                         (() => {
@@ -5526,6 +5755,48 @@ export default function WeeklySchedule() {
                                                     ? "📚🚫 None"
                                                     : "📚 ?"}
                                               </button>
+                                              {(entry.status === "cancelled" ||
+                                                entry.status ===
+                                                  "rescheduled") && (
+                                                <button
+                                                  type="button"
+                                                  title={
+                                                    hasCancelNote(entry)
+                                                      ? `${entry.cancelNote} — click to edit`
+                                                      : "Add a cancellation / make-up note"
+                                                  }
+                                                  onClick={() =>
+                                                    setEditingEntry({
+                                                      ...entry,
+                                                    })
+                                                  }
+                                                  style={{
+                                                    ...styles.materialToggle,
+                                                    background: hasCancelNote(
+                                                      entry,
+                                                    )
+                                                      ? "#f3e8ff"
+                                                      : "#f8fafc",
+                                                    color: hasCancelNote(entry)
+                                                      ? "#6b21a8"
+                                                      : "#94a3b8",
+                                                    border: `1px solid ${
+                                                      hasCancelNote(entry)
+                                                        ? "#c4b5fd"
+                                                        : "#e2e8f0"
+                                                    }`,
+                                                    maxWidth: 180,
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                    flexShrink: 0,
+                                                  }}
+                                                >
+                                                  {hasCancelNote(entry)
+                                                    ? `📝 ${entry.cancelNote}`
+                                                    : "📝 + note"}
+                                                </button>
+                                              )}
                                               <button
                                                 type="button"
                                                 title="Click to cycle status"
@@ -6153,6 +6424,17 @@ export default function WeeklySchedule() {
               <button
                 style={{
                   ...styles.btnGhost,
+                  color: "#b45309",
+                  borderColor: "#fcd34d",
+                }}
+                onClick={removeDuplicateSessions}
+                title="Delete duplicate sessions (same tutor + student on the same day), keeping the most complete one"
+              >
+                🧹 Remove Duplicates
+              </button>
+              <button
+                style={{
+                  ...styles.btnGhost,
                   color: "#dc2626",
                   borderColor: "#fca5a5",
                 }}
@@ -6304,6 +6586,73 @@ export default function WeeklySchedule() {
                 </select>
               </div>
             </div>
+            {(editingEntry.status === "cancelled" ||
+              editingEntry.status === "rescheduled") && (
+              <div style={styles.field}>
+                <span style={styles.fieldLabel}>
+                  📝 Cancellation / Make-up Note
+                </span>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    marginBottom: 6,
+                  }}
+                >
+                  {CANCEL_NOTE_PRESETS.map((preset) => {
+                    const active = editingEntry.cancelNote === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() =>
+                          setEditingEntry((p) => ({ ...p, cancelNote: preset }))
+                        }
+                        style={{
+                          ...styles.materialToggle,
+                          background: active ? "#f3e8ff" : "#f8fafc",
+                          color: active ? "#6b21a8" : "#475569",
+                          border: `1px solid ${active ? "#c4b5fd" : "#e2e8f0"}`,
+                        }}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+                <textarea
+                  style={{ ...styles.input, minHeight: 56, resize: "vertical" }}
+                  value={editingEntry.cancelNote || ""}
+                  placeholder="e.g. Moved to Tue next week · no make-up, continues on next regular class"
+                  onChange={(e) =>
+                    setEditingEntry((p) => ({
+                      ...p,
+                      cancelNote: e.target.value,
+                    }))
+                  }
+                />
+                <span style={{ ...styles.fieldLabel, marginTop: 8 }}>
+                  🔁 Make-up class date (optional)
+                </span>
+                <input
+                  type="date"
+                  style={styles.input}
+                  value={editingEntry.makeupDate || ""}
+                  onChange={(e) =>
+                    setEditingEntry((p) => ({
+                      ...p,
+                      makeupDate: e.target.value || null,
+                    }))
+                  }
+                />
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 3 }}>
+                  Saving creates a Pending copy of this session on that date
+                  (any week), so its audio is tracked there. Clear it to remove
+                  the copy.
+                </div>
+              </div>
+            )}
             <div style={styles.field}>
               <span style={styles.fieldLabel}>Audio Filename</span>
               <input

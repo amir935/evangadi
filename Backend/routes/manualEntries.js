@@ -26,28 +26,95 @@ const VALID_MATERIAL_STATUS = ["unanswered", "sent", "none"];
 // GET /api/manual-entries/:weekKey
 router.get("/:weekKey", async (req, res) => {
   const [rows] = await pool.query(
-    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at, makeup_day, is_assessment, end_date FROM report_manual_entries WHERE week_key = ? ORDER BY id",
+    "SELECT id, tutor_name, student_name, day_id, status, audio_filename, material_status, session_time, reviewed_by, reviewed_at, makeup_day, is_assessment, end_date, cancel_note, makeup_date, makeup_of_id FROM report_manual_entries WHERE week_key = ? ORDER BY id",
     [req.params.weekKey],
   );
-  res.json(
-    rows.map((r) => ({
-      id: r.id,
-      tutorName: r.tutor_name,
-      studentName: r.student_name,
-      dayId: r.day_id,
-      status: r.status,
-      audioFilename: r.audio_filename || "",
-      materialStatus: r.material_status || "unanswered",
-      sessionTime: r.session_time
-        ? new Date(r.session_time).toISOString()
-        : null,
-      reviewedBy: r.reviewed_by || null,
-      reviewedAt: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
-      makeupDay: r.makeup_day || null,
-      isAssessment: !!r.is_assessment,
-      endDate: r.end_date ? formatDate(r.end_date) : null,
-    })),
+  res.json(rows.map(toEntry));
+});
+
+function toEntry(r) {
+  return {
+    id: r.id,
+    tutorName: r.tutor_name,
+    studentName: r.student_name,
+    dayId: r.day_id,
+    status: r.status,
+    audioFilename: r.audio_filename || "",
+    materialStatus: r.material_status || "unanswered",
+    sessionTime: r.session_time ? new Date(r.session_time).toISOString() : null,
+    reviewedBy: r.reviewed_by || null,
+    reviewedAt: r.reviewed_at ? new Date(r.reviewed_at).toISOString() : null,
+    makeupDay: r.makeup_day || null,
+    isAssessment: !!r.is_assessment,
+    endDate: r.end_date ? formatDate(r.end_date) : null,
+    cancelNote: r.cancel_note || "",
+    makeupDate: r.makeup_date ? formatDate(r.makeup_date) : null,
+    makeupOfId: r.makeup_of_id || null,
+  };
+}
+
+// PUT /api/manual-entries/:id/makeup — schedule (or clear) the make-up class for a
+// cancelled/rescheduled session. Creates a Pending copy of the session on the make-up
+// date (in whichever week that date falls), replacing any earlier copy that has no
+// audio yet. Body: { date: "YYYY-MM-DD", weekKey, dayId, sessionTime } or { date: null }.
+router.put("/:id/makeup", async (req, res) => {
+  const { date, weekKey, dayId, sessionTime } = req.body || {};
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return res.status(400).json({ error: "Invalid date" });
+  if (date && (!weekKey || !VALID_DAYS.includes(dayId)))
+    return res.status(400).json({ error: "weekKey and dayId required" });
+
+  const [[orig]] = await pool.query(
+    "SELECT * FROM report_manual_entries WHERE id = ?",
+    [req.params.id],
   );
+  if (!orig) return res.status(404).json({ error: "Entry not found" });
+
+  // A copy that already has audio is real work — never delete it silently.
+  const [copies] = await pool.query(
+    "SELECT id, status, audio_filename FROM report_manual_entries WHERE makeup_of_id = ?",
+    [orig.id],
+  );
+  const locked = copies.filter(
+    (c) => c.status !== "pending" || (c.audio_filename || "").trim(),
+  );
+  if (locked.length > 0)
+    return res.status(409).json({
+      error:
+        "The make-up session already has audio/status — edit or delete it directly",
+    });
+  const deletedIds = copies.map((c) => c.id);
+  if (deletedIds.length > 0)
+    await pool.query("DELETE FROM report_manual_entries WHERE id IN (?)", [
+      deletedIds,
+    ]);
+
+  await pool.query(
+    "UPDATE report_manual_entries SET makeup_date = ?, makeup_day = ? WHERE id = ?",
+    [date || null, date ? dayId : null, orig.id],
+  );
+
+  let copy = null;
+  if (date) {
+    const [info] = await pool.query(
+      "INSERT INTO report_manual_entries (week_key, tutor_name, student_name, day_id, status, session_time, end_date, makeup_of_id) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)",
+      [
+        weekKey,
+        orig.tutor_name,
+        orig.student_name,
+        dayId,
+        sessionTime ? new Date(sessionTime) : null,
+        orig.end_date,
+        orig.id,
+      ],
+    );
+    const [[row]] = await pool.query(
+      "SELECT * FROM report_manual_entries WHERE id = ?",
+      [info.insertId],
+    );
+    copy = { ...toEntry(row), weekKey };
+  }
+  res.json({ ok: true, copy, deletedIds });
 });
 
 // POST /api/manual-entries/:weekKey — add one entry
@@ -129,6 +196,7 @@ router.patch("/:id", async (req, res) => {
     makeupDay,
     isAssessment,
     endDate,
+    cancelNote,
   } = req.body || {};
   if (status && !VALID_STATUS.includes(status))
     return res.status(400).json({ error: "Invalid status" });
@@ -181,6 +249,10 @@ router.patch("/:id", async (req, res) => {
   if (endDate !== undefined) {
     sets.push("end_date = ?");
     vals.push(endDate && /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? endDate : null);
+  }
+  if (cancelNote !== undefined) {
+    sets.push("cancel_note = ?");
+    vals.push((cancelNote || "").trim() || null);
   }
 
   // Track who reviewed: when status becomes "reviewed", stamp the current user + time.

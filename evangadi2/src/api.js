@@ -244,6 +244,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(fields),
     }),
+  // Schedule/clear a make-up class — auto-creates the Pending copy on that date.
+  setManualEntryMakeup: (id, body) =>
+    request(`/api/manual-entries/${id}/makeup`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   deleteManualEntry: (id) =>
     request(`/api/manual-entries/${id}`, { method: "DELETE" }),
   // Clear every Audio Report entry in one week only

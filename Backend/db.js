@@ -322,6 +322,34 @@ async function initSchema() {
       /* already exists */
     }
 
+    // Migration: free-text note for a cancelled/rescheduled session — e.g. "make-up
+    // next week" or "no make-up, uses next regular class" (from the tutor's doc).
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN cancel_note TEXT DEFAULT NULL",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+
+    // Migration: make-up scheduling. The original cancelled/rescheduled session stores
+    // makeup_date; the auto-created make-up copy (possibly in a later week) points back
+    // to it via makeup_of_id so it can be removed/moved and isn't carried forward.
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN makeup_date DATE DEFAULT NULL",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+    try {
+      await conn.query(
+        "ALTER TABLE report_manual_entries ADD COLUMN makeup_of_id INT DEFAULT NULL",
+      );
+    } catch (e) {
+      /* already exists */
+    }
+
     // Permanent tutor expectations (default min sessions/days per week)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS tutor_expectations (
