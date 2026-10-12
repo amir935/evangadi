@@ -1038,6 +1038,7 @@ export default function WeeklySchedule() {
   const [showReport, setShowReport] = useState(false);
   const [showOverdueView, setShowOverdueView] = useState(false);
   const [showDailyReminder, setShowDailyReminder] = useState(false);
+  const [showMaterialReminder, setShowMaterialReminder] = useState(false);
   const [reminderTime, setReminderTime] = useState("21:00"); // default 9:00 PM
   const [reminderScheduled, setReminderScheduled] = useState(false);
   const [dailyReportCheck, setDailyReportCheck] = useState(null); // { entryId, tutorName, studentName, dayId, checked: {} }
@@ -1351,6 +1352,25 @@ export default function WeeklySchedule() {
       tutorMap[entry.tutorName].push({ ...entry, day });
     });
 
+    return tutorMap;
+  };
+
+  // Group this week's sessions marked material "none" (tutor didn't send in-session
+  // material) by tutor. Same exclusions as the material stats: stopped students,
+  // assessments, cancelled/rescheduled and absent sessions are skipped.
+  const buildMaterialReminderMap = () => {
+    const tutorMap = {};
+    reportManualEntries.forEach((entry) => {
+      if (entry.materialStatus !== "none") return;
+      if (entry.isAssessment || isExcused(entry) || entry.status === "absent")
+        return;
+      const day = DAYS.find((d) => d.id === entry.dayId);
+      if (!day) return;
+      const dayDateISO = fmtISO(addDays(reportWeekMonday, day.offset));
+      if (entry.endDate && dayDateISO > entry.endDate) return;
+      if (!tutorMap[entry.tutorName]) tutorMap[entry.tutorName] = [];
+      tutorMap[entry.tutorName].push({ ...entry, day });
+    });
     return tutorMap;
   };
 
@@ -4872,44 +4892,130 @@ export default function WeeklySchedule() {
                 );
               })()}
 
-              {/* Tutor in-session material reminder — shown on every week's report */}
+              {/* Tutor in-session material reminder — only for tutors with sessions
+                  marked "📚🚫 None" (material not sent) this week, one message per tutor */}
               {(() => {
-                const msg = `Hi, please be reminded that providing in-session material is mandatory, not optional. Failing to submit it is unacceptable, and excuses do not justify missing this requirement. Please take this responsibility seriously and ensure it does not happen again.`;
+                const tutorMap = buildMaterialReminderMap();
+                const tutorNames = Object.keys(tutorMap);
+                if (tutorNames.length === 0) return null;
+                const buildMsg = (tutorName) => {
+                  const list = tutorMap[tutorName]
+                    .map((e) => `• ${e.studentName} (${e.day.label})`)
+                    .join("\n");
+                  return [
+                    `Hi ${tutorName},`,
+                    ``,
+                    `In-session material was not sent for:`,
+                    list,
+                    ``,
+                    `Please be reminded that providing in-session material is mandatory, not optional. Failing to submit it is unacceptable, and excuses do not justify missing this requirement. Please take this responsibility seriously and ensure it does not happen again.`,
+                  ].join("\n");
+                };
                 return (
                   <div
                     style={{
                       ...styles.parentMsgBanner,
                       background: "#fff7ed",
                       border: "1px solid #fdba74",
+                      flexDirection: "column",
+                      alignItems: "stretch",
+                      gap: 8,
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>📎</span>
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{ ...styles.parentMsgTitle, color: "#c2410c" }}
-                      >
-                        Material Reminder
-                      </div>
-                      <div style={{ ...styles.parentMsgSub, color: "#9a3412" }}>
-                        In-session material is mandatory — send this to tutors
-                        who missed it.
-                      </div>
-                    </div>
-                    <button
-                      style={{ ...styles.parentMsgBtn, background: "#ea580c" }}
-                      title={msg}
-                      onClick={() =>
-                        navigator.clipboard
-                          .writeText(msg)
-                          .then(() =>
-                            flash(
-                              "✅ Material reminder copied! Paste it in WhatsApp.",
-                            ),
-                          )
-                      }
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 12 }}
                     >
-                      📋 Copy Message
-                    </button>
+                      <span style={{ fontSize: 20 }}>📎</span>
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{ ...styles.parentMsgTitle, color: "#c2410c" }}
+                        >
+                          Material Reminder
+                        </div>
+                        <div
+                          style={{ ...styles.parentMsgSub, color: "#9a3412" }}
+                        >
+                          {tutorNames.length} tutor
+                          {tutorNames.length !== 1 ? "s" : ""} didn't send
+                          in-session material
+                        </div>
+                      </div>
+                      <button
+                        style={{
+                          ...styles.parentMsgBtn,
+                          background: "#ea580c",
+                        }}
+                        onClick={() => setShowMaterialReminder((v) => !v)}
+                      >
+                        {showMaterialReminder ? "Hide" : "Show"}
+                      </button>
+                    </div>
+                    {showMaterialReminder && (
+                      <div
+                        style={{
+                          maxHeight: 220,
+                          overflowY: "auto",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                        }}
+                      >
+                        {tutorNames.map((tutorName) => (
+                          <div
+                            key={tutorName}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "6px 8px",
+                              borderRadius: 8,
+                              background: "#ffffff",
+                              border: "1px solid #fed7aa",
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: 12.5,
+                                  fontWeight: 800,
+                                  color: "#7c2d12",
+                                }}
+                              >
+                                {tutorName}
+                              </div>
+                              <div style={{ fontSize: 11, color: "#9a3412" }}>
+                                {tutorMap[tutorName]
+                                  .map(
+                                    (e) =>
+                                      `${e.studentName} (${e.day.short})`,
+                                  )
+                                  .join(", ")}
+                              </div>
+                            </div>
+                            <button
+                              style={{
+                                ...styles.parentMsgBtn,
+                                background: "#ea580c",
+                                padding: "5px 10px",
+                                fontSize: 11.5,
+                              }}
+                              title={buildMsg(tutorName)}
+                              onClick={() =>
+                                navigator.clipboard
+                                  .writeText(buildMsg(tutorName))
+                                  .then(() =>
+                                    flash(
+                                      `✅ Material reminder for ${tutorName} copied! Paste it in WhatsApp.`,
+                                    ),
+                                  )
+                              }
+                            >
+                              📋 Copy
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
