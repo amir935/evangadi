@@ -4871,6 +4871,48 @@ export default function WeeklySchedule() {
                   </div>
                 );
               })()}
+
+              {/* Tutor in-session material reminder — shown on every week's report */}
+              {(() => {
+                const msg = `Hi, please be reminded that providing in-session material is mandatory, not optional. Failing to submit it is unacceptable, and excuses do not justify missing this requirement. Please take this responsibility seriously and ensure it does not happen again.`;
+                return (
+                  <div
+                    style={{
+                      ...styles.parentMsgBanner,
+                      background: "#fff7ed",
+                      border: "1px solid #fdba74",
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>📎</span>
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{ ...styles.parentMsgTitle, color: "#c2410c" }}
+                      >
+                        Material Reminder
+                      </div>
+                      <div style={{ ...styles.parentMsgSub, color: "#9a3412" }}>
+                        In-session material is mandatory — send this to tutors
+                        who missed it.
+                      </div>
+                    </div>
+                    <button
+                      style={{ ...styles.parentMsgBtn, background: "#ea580c" }}
+                      title={msg}
+                      onClick={() =>
+                        navigator.clipboard
+                          .writeText(msg)
+                          .then(() =>
+                            flash(
+                              "✅ Material reminder copied! Paste it in WhatsApp.",
+                            ),
+                          )
+                      }
+                    >
+                      📋 Copy Message
+                    </button>
+                  </div>
+                );
+              })()}
               <div style={styles.reportWeekNav}>
                 <button
                   style={styles.reportNavBtn}
